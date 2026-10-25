@@ -1,44 +1,5 @@
-import { Eye, GitCommit, GraduationCap, ArrowUpRight, CheckCircle2 } from 'lucide-react';
+import { Eye, GitCommit, GraduationCap, ShieldCheck, CheckCircle2 } from 'lucide-react';
 import { LearningFloatingDSA } from './FloatingDSA';
-
-const BENEFITS = [
-  {
-    icon: Eye,
-    title: 'Visual Debugging',
-    tagline: 'See pointer dereferences and memory updates.',
-    description: 'Understand how data structures and pointers change during execution.',
-    bulletPoints: [
-      'Eliminate silent segmentation faults and wild pointer bugs',
-      'Visually confirm nullptr termination before running loops',
-      'Direct correlation between line execution and heap mutation',
-    ],
-    accent: '#168BFF',
-  },
-  {
-    icon: GitCommit,
-    title: 'Step-by-Step Learning',
-    tagline: 'Connect theoretical code with real data structures.',
-    description: 'Connect the code you write with the structures it creates.',
-    bulletPoints: [
-      'Step forwards and backwards through your pointer operations',
-      'Watch nodes connect, unlink, and swap dynamically',
-      'Replace pencil-and-paper tracing with live interactive diagrams',
-    ],
-    accent: '#8057E8',
-  },
-  {
-    icon: GraduationCap,
-    title: 'Built for Learners',
-    tagline: 'Crafted specifically for CS students and educators.',
-    description: 'Make complex C++ and DSA concepts easier to explore.',
-    bulletPoints: [
-      'Friendly diagnostic hints when memory leaks occur',
-      'Uncluttered interface with clear visual hierarchy',
-      '100% Free & Open Source for universities and students',
-    ],
-    accent: '#3CCB83',
-  },
-];
 
 export const LearningBenefits: React.FC = () => {
   return (
@@ -48,17 +9,18 @@ export const LearningBenefits: React.FC = () => {
         {/* Section Header */}
         <div className="section-header">
           <div className="section-badge">
+            <GraduationCap size={14} color="#168BFF" />
             <span>Pedagogical Value</span>
           </div>
           <h2 className="section-title">
-            Understand, <span className="gradient-text-blue-purple">Don't Just Write.</span>
+            Understand, <span className="gradient-text-blue-purple">Don't Just Guess.</span>
           </h2>
           <p className="section-desc">
-            Go beyond code and see what's happening, step by step.
+            Replace tedious terminal crashes and hand-drawn whiteboard scribbles with instant visual clarity.
           </p>
         </div>
 
-        {/* 3 Large Benefit Panels */}
+        {/* 3 Large Visual Benefit Panels */}
         <div
           style={{
             display: 'grid',
@@ -66,102 +28,250 @@ export const LearningBenefits: React.FC = () => {
             gap: '28px',
           }}
         >
-          {BENEFITS.map((b) => {
-            const Icon = b.icon;
-            return (
+          {/* Benefit 1: Visual Pointer Guard */}
+          <div
+            className="spotlight-card"
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              justifyContent: 'space-between',
+              padding: '30px',
+              backgroundColor: '#101A28',
+              borderRadius: '14px',
+            }}
+          >
+            <div>
               <div
-                key={b.title}
-                className="card"
                 style={{
+                  width: '48px',
+                  height: '48px',
+                  borderRadius: '12px',
+                  backgroundColor: 'rgba(22, 139, 255, 0.1)',
+                  border: '1px solid rgba(22, 139, 255, 0.3)',
                   display: 'flex',
-                  flexDirection: 'column',
-                  justifyContent: 'space-between',
-                  padding: '36px 30px',
-                  backgroundColor: '#101A28',
-                  border: '1px solid var(--border-color)',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: '#168BFF',
+                  marginBottom: '20px',
                 }}
               >
-                <div>
-                  {/* Icon & Accent */}
-                  <div
-                    style={{
-                      width: '52px',
-                      height: '52px',
-                      borderRadius: '12px',
-                      backgroundColor: 'rgba(22, 139, 255, 0.08)',
-                      border: '1px solid rgba(22, 139, 255, 0.2)',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      color: b.accent,
-                      marginBottom: '24px',
-                    }}
-                  >
-                    <Icon size={26} />
-                  </div>
-
-                  <h3
-                    style={{
-                      fontSize: '1.4rem',
-                      fontWeight: 700,
-                      marginBottom: '8px',
-                      color: '#F4F7FB',
-                    }}
-                  >
-                    {b.title}
-                  </h3>
-
-                  <p
-                    style={{
-                      fontSize: '1rem',
-                      color: '#168BFF',
-                      fontWeight: 600,
-                      marginBottom: '14px',
-                    }}
-                  >
-                    {b.description}
-                  </p>
-
-                  <p
-                    style={{
-                      fontSize: '0.9375rem',
-                      color: 'var(--text-secondary)',
-                      lineHeight: '1.6',
-                      marginBottom: '24px',
-                    }}
-                  >
-                    {b.tagline}
-                  </p>
-
-                  {/* Bullet Points */}
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                    {b.bulletPoints.map((pt, i) => (
-                      <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
-                        <CheckCircle2 size={16} color={b.accent} style={{ flexShrink: 0, marginTop: '3px' }} />
-                        <span style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', lineHeight: '1.5' }}>
-                          {pt}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                <div
-                  style={{
-                    marginTop: '28px',
-                    paddingTop: '16px',
-                    borderTop: '1px solid var(--border-color)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                  }}
-                >
-                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Proven CS Methodology</span>
-                  <ArrowUpRight size={16} color={b.accent} />
-                </div>
+                <Eye size={24} />
               </div>
-            );
-          })}
+
+              <h3 style={{ fontSize: '1.25rem', fontWeight: 700, color: '#F4F7FB', marginBottom: '8px' }}>
+                Visual Pointer Debugging
+              </h3>
+              <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', marginBottom: '16px' }}>
+                Eliminate mysterious segmentation faults before they crash your runtime.
+              </p>
+            </div>
+
+            {/* Embedded Visual: Segfault vs SimIDE Guard */}
+            <div
+              style={{
+                backgroundColor: '#0A101A',
+                border: '1px solid #26364A',
+                borderRadius: '10px',
+                padding: '14px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '10px',
+                margin: '12px 0',
+              }}
+            >
+              {/* Terminal Segfault (Old Way) */}
+              <div
+                style={{
+                  padding: '6px 10px',
+                  backgroundColor: 'rgba(237, 106, 94, 0.1)',
+                  border: '1px solid rgba(237, 106, 94, 0.3)',
+                  borderRadius: '6px',
+                  fontSize: '0.6875rem',
+                  fontFamily: 'var(--font-mono)',
+                  color: '#ED6A5E',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                }}
+              >
+                <span>Terminal: Segmentation fault (core dumped)</span>
+                <span>✗ 0x0</span>
+              </div>
+
+              {/* SimIDE Visual Guard (New Way) */}
+              <div
+                style={{
+                  padding: '6px 10px',
+                  backgroundColor: 'rgba(60, 203, 131, 0.12)',
+                  border: '1px solid rgba(60, 203, 131, 0.35)',
+                  borderRadius: '6px',
+                  fontSize: '0.6875rem',
+                  fontFamily: 'var(--font-mono)',
+                  color: '#3CCB83',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                }}
+              >
+                <span>SimIDE: head points to Node(10) @ 0x7FA0</span>
+                <span>✓ Safe</span>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#168BFF', fontSize: '0.8125rem', fontWeight: 600 }}>
+              <ShieldCheck size={16} />
+              <span>Direct line-to-memory inspection</span>
+            </div>
+          </div>
+
+          {/* Benefit 2: Step-by-Step Operations */}
+          <div
+            className="spotlight-card"
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              justifyContent: 'space-between',
+              padding: '30px',
+              backgroundColor: '#101A28',
+              borderRadius: '14px',
+            }}
+          >
+            <div>
+              <div
+                style={{
+                  width: '48px',
+                  height: '48px',
+                  borderRadius: '12px',
+                  backgroundColor: 'rgba(128, 87, 232, 0.1)',
+                  border: '1px solid rgba(128, 87, 232, 0.3)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: '#8057E8',
+                  marginBottom: '20px',
+                }}
+              >
+                <GitCommit size={24} />
+              </div>
+
+              <h3 style={{ fontSize: '1.25rem', fontWeight: 700, color: '#F4F7FB', marginBottom: '8px' }}>
+                Step-by-Step Learning
+              </h3>
+              <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', marginBottom: '16px' }}>
+                Connect theoretical algorithms directly to physical heap memory structures.
+              </p>
+            </div>
+
+            {/* Embedded Visual: Live Step Rail */}
+            <div
+              style={{
+                backgroundColor: '#0A101A',
+                border: '1px solid #26364A',
+                borderRadius: '10px',
+                padding: '14px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '8px',
+                margin: '12px 0',
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.6875rem', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)' }}>
+                <span>Step Forward [F10]</span>
+                <span style={{ color: '#8057E8' }}>Step Back [F11]</span>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', padding: '6px 0' }}>
+                <span style={{ padding: '3px 8px', backgroundColor: '#152235', border: '1px solid #26364A', borderRadius: '4px', fontSize: '0.6875rem', color: 'var(--text-muted)' }}>
+                  1. Stack
+                </span>
+                <span style={{ color: '#8057E8' }}>→</span>
+                <span style={{ padding: '3px 8px', backgroundColor: 'rgba(128, 87, 232, 0.2)', border: '1px solid #8057E8', borderRadius: '4px', fontSize: '0.6875rem', color: '#A78BFA', fontWeight: 700 }}>
+                  2. Allocate
+                </span>
+                <span style={{ color: '#8057E8' }}>→</span>
+                <span style={{ padding: '3px 8px', backgroundColor: '#152235', border: '1px solid #26364A', borderRadius: '4px', fontSize: '0.6875rem', color: 'var(--text-muted)' }}>
+                  3. Link
+                </span>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#8057E8', fontSize: '0.8125rem', fontWeight: 600 }}>
+              <CheckCircle2 size={16} />
+              <span>Full execution scrub history</span>
+            </div>
+          </div>
+
+          {/* Benefit 3: University Grade Leak Prevention */}
+          <div
+            className="spotlight-card"
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              justifyContent: 'space-between',
+              padding: '30px',
+              backgroundColor: '#101A28',
+              borderRadius: '14px',
+            }}
+          >
+            <div>
+              <div
+                style={{
+                  width: '48px',
+                  height: '48px',
+                  borderRadius: '12px',
+                  backgroundColor: 'rgba(60, 203, 131, 0.1)',
+                  border: '1px solid rgba(60, 203, 131, 0.3)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: '#3CCB83',
+                  marginBottom: '20px',
+                }}
+              >
+                <GraduationCap size={24} />
+              </div>
+
+              <h3 style={{ fontSize: '1.25rem', fontWeight: 700, color: '#F4F7FB', marginBottom: '8px' }}>
+                Built for CS Students &amp; Educators
+              </h3>
+              <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', marginBottom: '16px' }}>
+                Clear visual feedback when memory leaks or orphaned heap nodes happen.
+              </p>
+            </div>
+
+            {/* Embedded Visual: Heap Telemetry Score */}
+            <div
+              style={{
+                backgroundColor: '#0A101A',
+                border: '1px solid #26364A',
+                borderRadius: '10px',
+                padding: '14px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '6px',
+                margin: '12px 0',
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.6875rem', fontFamily: 'var(--font-mono)' }}>
+                <span style={{ color: 'var(--text-muted)' }}>Heap Memory:</span>
+                <span style={{ color: '#F4F7FB' }}>72 Bytes allocated</span>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.6875rem', fontFamily: 'var(--font-mono)' }}>
+                <span style={{ color: 'var(--text-muted)' }}>Memory Leaks:</span>
+                <span style={{ color: '#3CCB83', fontWeight: 700 }}>0 Bytes (Clean)</span>
+              </div>
+
+              <div style={{ width: '100%', height: '4px', backgroundColor: '#26364A', borderRadius: '2px', overflow: 'hidden', marginTop: '4px' }}>
+                <div style={{ width: '100%', height: '100%', backgroundColor: '#3CCB83' }} />
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#3CCB83', fontSize: '0.8125rem', fontWeight: 600 }}>
+              <CheckCircle2 size={16} />
+              <span>100% Free &amp; Open Source</span>
+            </div>
+          </div>
         </div>
       </div>
     </section>

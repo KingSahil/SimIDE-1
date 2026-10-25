@@ -1,29 +1,62 @@
 
 
-export const VsCodeIcon: React.FC<{ size?: number; className?: string }> = ({ size = 20, className = '' }) => (
-  <svg
-    width={size}
-    height={size}
-    viewBox="0 0 24 24"
-    fill="none"
-    xmlns="http://www.w3.org/2000/svg"
-    className={className}
-    aria-hidden="true"
-  >
-    <path
-      d="M17.5 2.5L7.2 10.4L3.1 7.2L1.5 8.2V15.8L3.1 16.8L7.2 13.6L17.5 21.5L22.5 19V5L17.5 2.5ZM17.5 17.5L9.6 12L17.5 6.5V17.5Z"
-      fill="#007ACC"
-    />
-    <path
-      d="M17.5 2.5L22.5 5V19L17.5 21.5V17.5L9.6 12L17.5 6.5V2.5Z"
-      fill="#168BFF"
-    />
-    <path
-      d="M3.1 7.2L7.2 10.4L3.1 13.6L1.5 12.3V8.7L3.1 7.2Z"
-      fill="#005A9E"
-    />
-  </svg>
-);
+export const VsCodeIcon: React.FC<{ size?: number; className?: string; colorMode?: 'brand' | 'white' }> = ({
+  size = 22,
+  className = '',
+  colorMode = 'brand',
+}) => {
+  if (colorMode === 'white') {
+    return (
+      <svg
+        width={size}
+        height={size}
+        viewBox="0 0 24 24"
+        fill="none"
+        xmlns="http://www.w3.org/2000/svg"
+        className={className}
+        aria-hidden="true"
+      >
+        <path
+          d="M17.5 2.5L7.2 10.4L3.1 7.2L1.5 8.2V15.8L3.1 16.8L7.2 13.6L17.5 21.5L22.5 19V5L17.5 2.5ZM17.5 17.5L9.6 12L17.5 6.5V17.5Z"
+          fill="rgba(255, 255, 255, 0.75)"
+        />
+        <path
+          d="M17.5 2.5L22.5 5V19L17.5 21.5V17.5L9.6 12L17.5 6.5V2.5Z"
+          fill="#FFFFFF"
+        />
+        <path
+          d="M3.1 7.2L7.2 10.4L3.1 13.6L1.5 12.3V8.7L3.1 7.2Z"
+          fill="rgba(255, 255, 255, 0.55)"
+        />
+      </svg>
+    );
+  }
+
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      className={className}
+      aria-hidden="true"
+    >
+      <path
+        d="M17.5 2.5L7.2 10.4L3.1 7.2L1.5 8.2V15.8L3.1 16.8L7.2 13.6L17.5 21.5L22.5 19V5L17.5 2.5ZM17.5 17.5L9.6 12L17.5 6.5V17.5Z"
+        fill="#007ACC"
+      />
+      <path
+        d="M17.5 2.5L22.5 5V19L17.5 21.5V17.5L9.6 12L17.5 6.5V2.5Z"
+        fill="#29B6F6"
+      />
+      <path
+        d="M3.1 7.2L7.2 10.4L3.1 13.6L1.5 12.3V8.7L3.1 7.2Z"
+        fill="#0288D1"
+      />
+    </svg>
+  );
+};
 
 export const GithubIcon: React.FC<{ size?: number; className?: string }> = ({ size = 20, className = '' }) => (
   <svg

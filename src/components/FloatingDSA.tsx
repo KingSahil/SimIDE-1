@@ -1,560 +1,1101 @@
-import React from 'react';
+import React, { useEffect, useRef, useState } from 'react';
+import { motion } from 'framer-motion';
+import {
+  forceSimulation,
+  forceLink,
+  forceManyBody,
+  forceCollide,
+  forceX,
+  forceY,
+} from 'd3-force';
+import type {
+  Simulation,
+  SimulationNodeDatum,
+  SimulationLinkDatum,
+} from 'd3-force';
 
 /**
- * FloatingDSA — Complete suite of decorative, animated data-structure diagrams
- * and C++ programming symbols distributed throughout the SimIDE website.
- *
- * Characteristics:
- * - Electric-blue (#079BFF / #168BFF) dominant accent, violet (#8057E8) & purple (#B99AFF) secondary.
- * - Thin neon-style outlines, dark translucent fills, subtle glow filters.
- * - Gentle floating motion: 14s-24s ease-in-out alternate, 4px-8px displacement.
- * - pointer-events: none, aria-hidden="true".
- * - Respects prefers-reduced-motion and gracefully scales for mobile screens.
+ * DraggableDSA — Spring wrapper for floating items with dragSnapToOrigin.
+ * When released, it smoothly springs back to its original position!
  */
-
-const BLUE = '#079BFF';
-const BLUE_DIM = 'rgba(7, 155, 255, 0.6)';
-const BLUE_SUBTLE = 'rgba(7, 155, 255, 0.3)';
-const PURPLE = '#B99AFF';
-const PURPLE_DIM = 'rgba(185, 154, 255, 0.55)';
-const VIOLET = '#8057E8';
-const VIOLET_DIM = 'rgba(128, 87, 232, 0.5)';
-const TEXT_MUTED = 'rgba(244, 247, 251, 0.35)';
-
-const wrapBase: React.CSSProperties = {
-  position: 'absolute',
-  pointerEvents: 'none',
-  filter: 'drop-shadow(0 0 8px rgba(7, 155, 255, 0.2))',
-  transition: 'opacity 0.3s ease',
+export const DraggableDSA: React.FC<{
+  children: React.ReactNode;
+  style?: React.CSSProperties;
+  className?: string;
+  initialOffset?: { x: number; y: number };
+}> = ({ children, style, className, initialOffset = { x: 0, y: 0 } }) => {
+  return (
+    <motion.div
+      drag
+      dragSnapToOrigin
+      dragElastic={0.3}
+      dragTransition={{ bounceStiffness: 450, bounceDamping: 24 }}
+      initial={{ x: initialOffset.x, y: initialOffset.y }}
+      whileHover={{
+        scale: 1.05,
+        filter: 'drop-shadow(0 0 20px rgba(22, 139, 255, 0.85))',
+        zIndex: 50,
+      }}
+      whileDrag={{
+        scale: 1.12,
+        cursor: 'grabbing',
+        zIndex: 100,
+        filter: 'drop-shadow(0 0 32px rgba(0, 210, 255, 0.95)) drop-shadow(0 12px 24px rgba(0, 0, 0, 0.8))',
+      }}
+      style={{
+        position: 'absolute',
+        pointerEvents: 'auto',
+        cursor: 'grab',
+        touchAction: 'none',
+        userSelect: 'none',
+        transform: 'translate3d(0, 0, 0)',
+        willChange: 'transform',
+        ...style,
+      }}
+      className={className}
+    >
+      {children}
+    </motion.div>
+  );
 };
 
 /* ─────────────────────────────────────────────────────────────
-   REUSABLE DIAGRAM SVGS
+   1. D3-FORCE INTERACTIVE LINKED LIST
+   Reference: C:\Projects\vscode-extension\webview\app.ts
+   Every single node can be dragged and springs back to original position!
    ───────────────────────────────────────────────────────────── */
 
-/** Linked List: 10 → 20 → 30 → 40 */
-export const LinkedListHero: React.FC = () => (
-  <svg width="220" height="38" viewBox="0 0 220 38" fill="none" xmlns="http://www.w3.org/2000/svg">
-    {[0, 1, 2, 3].map((i) => {
-      const x = i * 56;
-      const vals = [10, 20, 30, 40];
+interface D3LLNode extends SimulationNodeDatum {
+  id: string;
+  type: 'head' | 'node' | 'null';
+  val?: number;
+  addr?: string;
+  nextAddr?: string | null;
+  targetX: number;
+  targetY: number;
+  width: number;
+  height: number;
+}
+
+interface D3LLLink extends SimulationLinkDatum<D3LLNode> {
+  source: string | D3LLNode;
+  target: string | D3LLNode;
+  distance: number;
+  strength: number;
+}
+
+export const D3InteractiveLinkedList: React.FC<{
+  initialNodes?: Array<{ val: number; addr: string; nextAddr: string | null }>;
+  scale?: number;
+}> = ({
+  initialNodes = [
+    { val: 10, addr: '0x7FA0', nextAddr: '0x7FB8' },
+    { val: 25, addr: '0x7FB8', nextAddr: '0x8024' },
+    { val: 42, addr: '0x8024', nextAddr: null },
+  ],
+  scale = 1,
+}) => {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const simulationRef = useRef<Simulation<D3LLNode, D3LLLink> | null>(null);
+
+  // Initialize node definitions with target coordinates
+  const initialData = useRef<D3LLNode[]>([]);
+  const initialLinks = useRef<D3LLLink[]>([]);
+
+  if (initialData.current.length === 0) {
+    const rawNodes: D3LLNode[] = [
+      {
+        id: 'head-ptr',
+        type: 'head',
+        targetX: 45,
+        targetY: 35,
+        x: 45,
+        y: 35,
+        width: 58,
+        height: 26,
+      },
+    ];
+
+    const rawLinks: D3LLLink[] = [
+      {
+        source: 'head-ptr',
+        target: 'node-0',
+        distance: 85,
+        strength: 0.4,
+      },
+    ];
+
+    initialNodes.forEach((n, i) => {
+      const nodeX = 145 + i * 140;
+      rawNodes.push({
+        id: `node-${i}`,
+        type: 'node',
+        val: n.val,
+        addr: n.addr,
+        nextAddr: n.nextAddr,
+        targetX: nodeX,
+        targetY: 65,
+        x: nodeX,
+        y: 65,
+        width: 116,
+        height: 46,
+      });
+
+      if (i < initialNodes.length - 1) {
+        rawLinks.push({
+          source: `node-${i}`,
+          target: `node-${i + 1}`,
+          distance: 140,
+          strength: 0.4,
+        });
+      }
+    });
+
+    const lastIdx = initialNodes.length - 1;
+    const nullX = 145 + initialNodes.length * 140 - 20;
+    rawNodes.push({
+      id: 'null-ptr',
+      type: 'null',
+      targetX: nullX,
+      targetY: 65,
+      x: nullX,
+      y: 65,
+      width: 54,
+      height: 26,
+    });
+
+    rawLinks.push({
+      source: `node-${lastIdx}`,
+      target: 'null-ptr',
+      distance: 90,
+      strength: 0.4,
+    });
+
+    initialData.current = rawNodes;
+    initialLinks.current = rawLinks;
+  }
+
+  const [nodePositions, setNodePositions] = useState<{ [id: string]: { x: number; y: number } }>(() => {
+    const map: { [id: string]: { x: number; y: number } } = {};
+    initialData.current.forEach((n) => {
+      map[n.id] = { x: n.x!, y: n.y! };
+    });
+    return map;
+  });
+
+  const [activeDragId, setActiveDragId] = useState<string | null>(null);
+
+  // Setup D3 Force Simulation with strong home return forces
+  useEffect(() => {
+    const nodes = initialData.current;
+    const links = initialLinks.current;
+
+    const sim = forceSimulation<D3LLNode>(nodes)
+      .force(
+        'link',
+        forceLink<D3LLNode, D3LLLink>(links)
+          .id((d) => d.id)
+          .distance((l) => l.distance)
+          .strength((l) => l.strength)
+      )
+      .force(
+        'charge',
+        forceManyBody<D3LLNode>()
+          .strength((d) => (d.type === 'node' ? -160 : -60))
+          .distanceMax(260)
+      )
+      .force(
+        'collide',
+        forceCollide<D3LLNode>()
+          .radius((d) => Math.max(d.width, d.height) / 2 + 8)
+          .iterations(2)
+      )
+      .force(
+        'centerX',
+        forceX<D3LLNode>()
+          .x((d) => d.targetX)
+          .strength(0.22) // Strong return to original X
+      )
+      .force(
+        'centerY',
+        forceY<D3LLNode>()
+          .y((d) => d.targetY)
+          .strength(0.22) // Strong return to original Y
+      )
+      .velocityDecay(0.35)
+      .alphaDecay(0.02);
+
+    sim.on('tick', () => {
+      const updated: { [id: string]: { x: number; y: number } } = {};
+      nodes.forEach((n) => {
+        if (n.x !== undefined && n.y !== undefined) {
+          updated[n.id] = { x: n.x, y: n.y };
+        }
+      });
+      setNodePositions(updated);
+    });
+
+    // Idle at mount since nodes are already at target coordinates
+    sim.stop();
+    simulationRef.current = sim;
+
+    return () => {
+      sim.stop();
+    };
+  }, []);
+
+  // Drag interaction handlers
+  const handlePointerDown = (id: string, e: React.PointerEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const sim = simulationRef.current;
+    if (!sim) return;
+
+    const targetNode = initialData.current.find((n) => n.id === id);
+    if (!targetNode) return;
+
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    setActiveDragId(id);
+
+    sim.alphaTarget(0.4).restart();
+    targetNode.fx = targetNode.x;
+    targetNode.fy = targetNode.y;
+
+    const startClientX = e.clientX;
+    const startClientY = e.clientY;
+    const origX = targetNode.x!;
+    const origY = targetNode.y!;
+
+    const onPointerMove = (moveEv: PointerEvent) => {
+      const dx = (moveEv.clientX - startClientX) / scale;
+      const dy = (moveEv.clientY - startClientY) / scale;
+      targetNode.fx = origX + dx;
+      targetNode.fy = origY + dy;
+    };
+
+    const onPointerUp = (upEv: PointerEvent) => {
+      try {
+        (e.currentTarget as HTMLElement).releasePointerCapture(upEv.pointerId);
+      } catch {}
+      window.removeEventListener('pointermove', onPointerMove);
+      window.removeEventListener('pointerup', onPointerUp);
+      // Release anchor and wake simulation with full alpha so it springs back to original target position!
+      targetNode.fx = null;
+      targetNode.fy = null;
+      sim.alpha(1).restart();
+      setActiveDragId(null);
+    };
+
+    window.addEventListener('pointermove', onPointerMove);
+    window.addEventListener('pointerup', onPointerUp);
+  };
+
+  // Helper to render dynamic curved SVG arrows between connected nodes
+  const renderConnectingArrows = () => {
+    return initialLinks.current.map((link, idx) => {
+      const srcId = typeof link.source === 'string' ? link.source : link.source.id;
+      const tgtId = typeof link.target === 'string' ? link.target : link.target.id;
+
+      const srcPos = nodePositions[srcId];
+      const tgtPos = nodePositions[tgtId];
+      if (!srcPos || !tgtPos) return null;
+
+      const srcNode = initialData.current.find((n) => n.id === srcId);
+      const tgtNode = initialData.current.find((n) => n.id === tgtId);
+      if (!srcNode || !tgtNode) return null;
+
+      const srcW = srcNode.width;
+      const tgtW = tgtNode.width;
+
+      const dx = tgtPos.x - srcPos.x;
+      const dy = tgtPos.y - srcPos.y;
+      const dist = Math.max(1, Math.sqrt(dx * dx + dy * dy));
+
+      const startX = srcPos.x + (dx / dist) * (srcW / 2);
+      const startY = srcPos.y + (dy / dist) * (srcNode.height / 2);
+      const endX = tgtPos.x - (dx / dist) * (tgtW / 2 + 4);
+      const endY = tgtPos.y - (dy / dist) * (tgtNode.height / 2 + 4);
+
+      const curvature = 16;
+      const midX = (startX + endX) / 2;
+      const midY = (startY + endY) / 2 - curvature;
+
+      const isHead = srcId === 'head-ptr';
+      const strokeColor = isHead ? '#0066FF' : '#168BFF';
+
       return (
-        <g key={i}>
-          <rect x={x} y="4" width="40" height="30" rx="6" stroke={BLUE} strokeWidth="1.2" fill="rgba(7,155,255,0.06)" />
-          <text x={x + 20} y="23" textAnchor="middle" fill={BLUE} fontSize="11" fontFamily="var(--font-mono)">{vals[i]}</text>
-          {i < 3 && (
-            <>
-              <line x1={x + 42} y1="19" x2={x + 53} y2="19" stroke={BLUE_DIM} strokeWidth="1.2" />
-              <polygon points={`${x + 53},16 ${x + 53},22 ${x + 57},19`} fill={BLUE_DIM} />
-            </>
-          )}
-        </g>
+        <path
+          key={idx}
+          d={`M ${startX} ${startY} Q ${midX} ${midY} ${endX} ${endY}`}
+          stroke={strokeColor}
+          strokeWidth="1.8"
+          strokeDasharray={isHead ? '4 2' : 'none'}
+          fill="none"
+          markerEnd={isHead ? 'url(#d3ArrowBlue)' : 'url(#d3ArrowCyan)'}
+          style={{
+            filter: 'drop-shadow(0 0 6px rgba(22, 139, 255, 0.4))',
+            transition: 'stroke 0.2s ease',
+          }}
+        />
       );
-    })}
-  </svg>
-);
+    });
+  };
 
-/** Pointer Chain: head → [0x7FA0] → [0x7FB8] → nullptr */
-export const LinkedListPointer: React.FC = () => (
-  <svg width="230" height="42" viewBox="0 0 230 42" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <text x="2" y="25" fill={BLUE} fontSize="10" fontFamily="var(--font-mono)" fontWeight="700">head</text>
-    <line x1="28" y1="21" x2="42" y2="21" stroke={BLUE_DIM} strokeWidth="1.2" />
-    <polygon points="42,18 42,24 46,21" fill={BLUE_DIM} />
-    {/* Node 1 */}
-    <rect x="48" y="7" width="56" height="28" rx="5" stroke={BLUE} strokeWidth="1.2" fill="rgba(7,155,255,0.06)" />
-    <text x="76" y="25" textAnchor="middle" fill={BLUE} fontSize="10" fontFamily="var(--font-mono)">0x7FA0</text>
-    <line x1="106" y1="21" x2="120" y2="21" stroke={BLUE_DIM} strokeWidth="1.2" />
-    <polygon points="120,18 120,24 124,21" fill={BLUE_DIM} />
-    {/* Node 2 */}
-    <rect x="126" y="7" width="56" height="28" rx="5" stroke={PURPLE} strokeWidth="1.2" fill="rgba(185,154,255,0.06)" />
-    <text x="154" y="25" textAnchor="middle" fill={PURPLE} fontSize="10" fontFamily="var(--font-mono)">0x7FB8</text>
-    <line x1="184" y1="21" x2="196" y2="21" stroke={PURPLE_DIM} strokeWidth="1.2" />
-    <polygon points="196,18 196,24 200,21" fill={PURPLE_DIM} />
-    <text x="204" y="25" fill={TEXT_MUTED} fontSize="10" fontFamily="var(--font-mono)">null</text>
-  </svg>
-);
+  const totalWidth = 620;
+  const totalHeight = 130;
 
-/** Doubly Linked List: nullptr ⇦ [15] ⇄ [30] ⇄ [45] ⇨ */
-export const DoublyLinkedList: React.FC = () => (
-  <svg width="220" height="42" viewBox="0 0 220 42" fill="none" xmlns="http://www.w3.org/2000/svg">
-    {[0, 1, 2].map((i) => {
-      const x = i * 68 + 10;
-      const vals = [15, 30, 45];
-      return (
-        <g key={i}>
-          <rect x={x} y="6" width="46" height="30" rx="5" stroke={BLUE} strokeWidth="1.2" fill="rgba(7,155,255,0.06)" />
-          <line x1={x + 28} y1="6" x2={x + 28} y2="36" stroke="rgba(7,155,255,0.25)" strokeWidth="1" />
-          <text x={x + 14} y="25" textAnchor="middle" fill={BLUE} fontSize="11" fontFamily="var(--font-mono)">{vals[i]}</text>
-          <text x={x + 37} y="24" textAnchor="middle" fill={BLUE_DIM} fontSize="8" fontFamily="var(--font-mono)">•</text>
-          {i < 2 && (
-            <>
-              {/* Forward arrow */}
-              <line x1={x + 48} y1="17" x2={x + 64} y2="17" stroke={VIOLET} strokeWidth="1" />
-              <polygon points={`${x + 64},15 ${x + 64},19 ${x + 67},17`} fill={VIOLET} />
-              {/* Backward arrow */}
-              <line x1={x + 67} y1="25" x2={x + 51} y2="25" stroke={BLUE_DIM} strokeWidth="1" />
-              <polygon points={`${x + 51},23 ${x + 51},27 ${x + 48},25`} fill={BLUE_DIM} />
-            </>
-          )}
-        </g>
-      );
-    })}
-  </svg>
-);
+  return (
+    <div
+      ref={containerRef}
+      style={{
+        position: 'relative',
+        width: `${totalWidth}px`,
+        height: `${totalHeight}px`,
+        pointerEvents: 'auto',
+        userSelect: 'none',
+        touchAction: 'none',
+      }}
+    >
+      {/* SVG Layer for Dynamic Connected Links */}
+      <svg
+        style={{
+          position: 'absolute',
+          inset: 0,
+          width: '100%',
+          height: '100%',
+          overflow: 'visible',
+          pointerEvents: 'none',
+          zIndex: 1,
+        }}
+      >
+        <defs>
+          <marker id="d3ArrowBlue" markerWidth="8" markerHeight="8" refX="7" refY="3.5" orient="auto">
+            <path d="M 0 0.5 L 7 3.5 L 0 6.5 Z" fill="#0066FF" />
+          </marker>
+          <marker id="d3ArrowCyan" markerWidth="8" markerHeight="8" refX="7" refY="3.5" orient="auto">
+            <path d="M 0 0.5 L 7 3.5 L 0 6.5 Z" fill="#168BFF" />
+          </marker>
+        </defs>
+        {renderConnectingArrows()}
+      </svg>
 
-/** Compact Linked List terminating: [42] → [99] → ∅ */
-export const LinkedListTerminator: React.FC = () => (
-  <svg width="150" height="36" viewBox="0 0 150 36" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <rect x="4" y="4" width="38" height="28" rx="5" stroke={BLUE} strokeWidth="1.2" fill="rgba(7,155,255,0.06)" />
-    <text x="23" y="22" textAnchor="middle" fill={BLUE} fontSize="11" fontFamily="var(--font-mono)">42</text>
-    <line x1="44" y1="18" x2="58" y2="18" stroke={BLUE_DIM} strokeWidth="1.2" />
-    <polygon points="58,15 58,21 62,18" fill={BLUE_DIM} />
+      {/* Render Individual Draggable Nodes */}
+      {initialData.current.map((node) => {
+        const pos = nodePositions[node.id] || { x: node.targetX, y: node.targetY };
+        const left = pos.x - node.width / 2;
+        const top = pos.y - node.height / 2;
+        const isDragging = activeDragId === node.id;
 
-    <rect x="64" y="4" width="38" height="28" rx="5" stroke={PURPLE} strokeWidth="1.2" fill="rgba(185,154,255,0.06)" />
-    <text x="83" y="22" textAnchor="middle" fill={PURPLE} fontSize="11" fontFamily="var(--font-mono)">99</text>
-    <line x1="104" y1="18" x2="118" y2="18" stroke={PURPLE_DIM} strokeWidth="1.2" />
-    <polygon points="118,15 118,21 122,18" fill={PURPLE_DIM} />
+        if (node.type === 'head') {
+          return (
+            <div
+              key={node.id}
+              onPointerDown={(e) => handlePointerDown(node.id, e)}
+              style={{
+                position: 'absolute',
+                left: `${left}px`,
+                top: `${top}px`,
+                width: `${node.width}px`,
+                height: `${node.height}px`,
+                zIndex: isDragging ? 100 : 5,
+                cursor: isDragging ? 'grabbing' : 'grab',
+                background: '#142B4D',
+                border: '1.5px solid #0066FF',
+                borderRadius: '9999px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                boxShadow: isDragging
+                  ? '0 0 20px rgba(0, 102, 255, 0.8), 0 8px 16px rgba(0,0,0,0.6)'
+                  : '0 2px 10px rgba(0, 102, 255, 0.35)',
+                transform: isDragging ? 'scale(1.12)' : 'scale(1)',
+                transition: isDragging ? 'none' : 'box-shadow 0.2s ease, transform 0.15s ease',
+              }}
+            >
+              <span style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', fontWeight: 700, color: '#58A6FF' }}>
+                head
+              </span>
+            </div>
+          );
+        }
 
-    <text x="132" y="23" fill={TEXT_MUTED} fontSize="14" fontFamily="var(--font-mono)">∅</text>
-  </svg>
-);
+        if (node.type === 'null') {
+          return (
+            <div
+              key={node.id}
+              onPointerDown={(e) => handlePointerDown(node.id, e)}
+              style={{
+                position: 'absolute',
+                left: `${left}px`,
+                top: `${top}px`,
+                width: `${node.width}px`,
+                height: `${node.height}px`,
+                zIndex: isDragging ? 100 : 5,
+                cursor: isDragging ? 'grabbing' : 'grab',
+                background: 'rgba(22, 27, 34, 0.95)',
+                border: '1.5px dashed #484F58',
+                borderRadius: '6px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '4px',
+                boxShadow: isDragging
+                  ? '0 0 16px rgba(255, 255, 255, 0.3), 0 8px 16px rgba(0,0,0,0.6)'
+                  : '0 2px 8px rgba(0, 0, 0, 0.4)',
+                transform: isDragging ? 'scale(1.12)' : 'scale(1)',
+                transition: isDragging ? 'none' : 'box-shadow 0.2s ease, transform 0.15s ease',
+              }}
+            >
+              <span style={{ color: '#737D8C', fontWeight: 700, fontSize: '10px' }}>⦸</span>
+              <span style={{ color: '#8B949E', fontFamily: 'var(--font-mono)', fontSize: '9px' }}>null</span>
+            </div>
+          );
+        }
 
-/** Array: [2, 5, 8, 12] with index labels */
-export const ArrayHero: React.FC = () => (
-  <svg width="168" height="42" viewBox="0 0 168 42" fill="none" xmlns="http://www.w3.org/2000/svg">
-    {[2, 5, 8, 12].map((v, i) => {
-      const x = i * 42;
-      return (
-        <g key={i}>
-          <text x={x + 20} y="8" textAnchor="middle" fill={TEXT_MUTED} fontSize="8" fontFamily="var(--font-mono)">[{i}]</text>
-          <rect x={x} y="11" width="40" height="28" rx="4" stroke={PURPLE} strokeWidth="1.2" fill="rgba(185,154,255,0.06)" />
-          <text x={x + 20} y="29" textAnchor="middle" fill={PURPLE} fontSize="11" fontFamily="var(--font-mono)">{v}</text>
-        </g>
-      );
-    })}
-  </svg>
-);
+        return (
+          <div
+            key={node.id}
+            onPointerDown={(e) => handlePointerDown(node.id, e)}
+            style={{
+              position: 'absolute',
+              left: `${left}px`,
+              top: `${top}px`,
+              width: `${node.width}px`,
+              height: `${node.height}px`,
+              zIndex: isDragging ? 100 : 5,
+              cursor: isDragging ? 'grabbing' : 'grab',
+              display: 'flex',
+              flexDirection: 'column',
+              transform: isDragging ? 'scale(1.12)' : 'scale(1)',
+              transition: isDragging ? 'none' : 'box-shadow 0.2s ease, transform 0.15s ease',
+            }}
+          >
+            <span
+              style={{
+                fontSize: '8px',
+                fontFamily: 'var(--font-mono)',
+                color: '#737D8C',
+                fontWeight: 600,
+                textAlign: 'center',
+                marginBottom: '2px',
+                pointerEvents: 'none',
+              }}
+            >
+              {node.addr}
+            </span>
 
-/** Array with index pointer marker: arr[2] = 16 */
-export const ArrayIndexed: React.FC = () => (
-  <svg width="180" height="52" viewBox="0 0 180 52" fill="none" xmlns="http://www.w3.org/2000/svg">
-    {[4, 9, 16, 25].map((v, i) => {
-      const x = i * 44 + 2;
-      const isTarget = i === 2;
-      return (
-        <g key={i}>
-          <rect
-            x={x}
-            y="6"
-            width="40"
-            height="28"
-            rx="4"
-            stroke={isTarget ? BLUE : VIOLET}
-            strokeWidth={isTarget ? 1.5 : 1}
-            fill={isTarget ? 'rgba(7,155,255,0.14)' : 'rgba(128,87,232,0.06)'}
-          />
-          <text x={x + 20} y="24" textAnchor="middle" fill={isTarget ? BLUE : VIOLET} fontSize="11" fontFamily="var(--font-mono)" fontWeight={isTarget ? 700 : 400}>
-            {v}
-          </text>
-          {isTarget && (
-            <>
-              <line x1={x + 20} y1="46" x2={x + 20} y2="37" stroke={BLUE} strokeWidth="1.2" />
-              <polygon points={`${x + 17},37 ${x + 23},37 ${x + 20},34`} fill={BLUE} />
-              <text x={x + 20} y="52" textAnchor="middle" fill={BLUE} fontSize="8" fontFamily="var(--font-mono)">i = 2</text>
-            </>
-          )}
-        </g>
-      );
-    })}
-  </svg>
-);
+            <div
+              style={{
+                display: 'flex',
+                width: '100%',
+                height: '38px',
+                background: 'linear-gradient(180deg, #161B22 0%, #0D1117 100%)',
+                border: isDragging ? '1.5px solid #00D2FF' : '1.5px solid #30363D',
+                borderRadius: '8px',
+                boxShadow: isDragging
+                  ? '0 0 24px rgba(0, 210, 255, 0.75), 0 8px 20px rgba(0,0,0,0.7)'
+                  : '0 4px 14px rgba(0, 0, 0, 0.45)',
+                overflow: 'hidden',
+              }}
+            >
+              <div
+                style={{
+                  flex: 1,
+                  padding: '2px 4px',
+                  borderRight: '1px solid #21262D',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  justifyContent: 'center',
+                  alignItems: 'center',
+                }}
+              >
+                <span style={{ fontSize: '6px', fontWeight: 700, color: '#737D8C', letterSpacing: '0.5px' }}>
+                  DATA
+                </span>
+                <span style={{ fontSize: '13px', fontWeight: 700, color: '#F0F6FC', fontFamily: 'var(--font-mono)' }}>
+                  {node.val}
+                </span>
+              </div>
 
-/** Array with Binary Search pointers */
-export const ArrayBinarySearch: React.FC = () => (
-  <svg width="190" height="48" viewBox="0 0 190 48" fill="none" xmlns="http://www.w3.org/2000/svg">
-    {[10, 20, 30, 42, 55].map((v, i) => {
-      const x = i * 37 + 3;
-      const isMid = i === 2;
-      return (
-        <g key={i}>
-          <rect
-            x={x}
-            y="12"
-            width="34"
-            height="26"
-            rx="3"
-            stroke={isMid ? BLUE : PURPLE}
-            strokeWidth={isMid ? 1.4 : 1}
-            fill={isMid ? 'rgba(7,155,255,0.15)' : 'rgba(185,154,255,0.06)'}
-          />
-          <text x={x + 17} y="29" textAnchor="middle" fill={isMid ? BLUE : PURPLE} fontSize="10" fontFamily="var(--font-mono)">{v}</text>
-          {i === 0 && <text x={x + 17} y="8" textAnchor="middle" fill={BLUE_SUBTLE} fontSize="7" fontFamily="var(--font-mono)">low</text>}
-          {isMid && <text x={x + 17} y="8" textAnchor="middle" fill={BLUE} fontSize="7" fontFamily="var(--font-mono)" fontWeight="700">mid</text>}
-          {i === 4 && <text x={x + 17} y="8" textAnchor="middle" fill={BLUE_SUBTLE} fontSize="7" fontFamily="var(--font-mono)">high</text>}
-        </g>
-      );
-    })}
-  </svg>
-);
-
-/** Array Sorting Swap Indicators */
-export const ArraySorting: React.FC = () => (
-  <svg width="168" height="46" viewBox="0 0 168 46" fill="none" xmlns="http://www.w3.org/2000/svg">
-    {[12, 25, 34, 45].map((v, i) => {
-      const x = i * 41 + 2;
-      const isSwap = i === 1 || i === 2;
-      return (
-        <g key={i}>
-          <rect
-            x={x}
-            y="8"
-            width="38"
-            height="28"
-            rx="4"
-            stroke={isSwap ? BLUE : VIOLET}
-            strokeWidth={isSwap ? 1.4 : 1}
-            fill={isSwap ? 'rgba(7,155,255,0.1)' : 'rgba(128,87,232,0.06)'}
-          />
-          <text x={x + 19} y="26" textAnchor="middle" fill={isSwap ? BLUE : VIOLET} fontSize="11" fontFamily="var(--font-mono)">{v}</text>
-        </g>
-      );
-    })}
-    {/* Swap curved arc between 1 and 2 */}
-    <path d="M 62 6 Q 82 -2 102 6" stroke={BLUE} strokeWidth="1" fill="none" strokeDasharray="2 2" />
-    <polygon points="101,4 105,7 101,8" fill={BLUE} />
-  </svg>
-);
-
-/** Binary Tree (3 nodes): root 7, child 3, child 11 */
-export const BinaryTreeHero: React.FC = () => (
-  <svg width="120" height="88" viewBox="0 0 120 88" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <line x1="60" y1="22" x2="30" y2="58" stroke={BLUE_DIM} strokeWidth="1" />
-    <line x1="60" y1="22" x2="90" y2="58" stroke={BLUE_DIM} strokeWidth="1" />
-    {/* Root */}
-    <circle cx="60" cy="18" r="14" stroke={BLUE} strokeWidth="1.2" fill="rgba(7,155,255,0.08)" />
-    <text x="60" y="22" textAnchor="middle" fill={BLUE} fontSize="10" fontFamily="var(--font-mono)">7</text>
-    {/* Left */}
-    <circle cx="30" cy="64" r="13" stroke={VIOLET} strokeWidth="1.2" fill="rgba(128,87,232,0.06)" />
-    <text x="30" y="68" textAnchor="middle" fill={VIOLET} fontSize="10" fontFamily="var(--font-mono)">3</text>
-    {/* Right */}
-    <circle cx="90" cy="64" r="13" stroke={PURPLE} strokeWidth="1.2" fill="rgba(185,154,255,0.06)" />
-    <text x="90" y="68" textAnchor="middle" fill={PURPLE} fontSize="10" fontFamily="var(--font-mono)">11</text>
-  </svg>
-);
-
-/** Balanced Binary Search Tree (5 nodes) */
-export const BinarySearchTree5: React.FC = () => (
-  <svg width="140" height="96" viewBox="0 0 140 96" fill="none" xmlns="http://www.w3.org/2000/svg">
-    {/* Branch lines */}
-    <line x1="70" y1="18" x2="40" y2="44" stroke={BLUE_DIM} strokeWidth="1" />
-    <line x1="70" y1="18" x2="100" y2="44" stroke={BLUE_DIM} strokeWidth="1" />
-    <line x1="40" y1="44" x2="22" y2="72" stroke={VIOLET_DIM} strokeWidth="1" />
-    <line x1="100" y1="44" x2="118" y2="72" stroke={PURPLE_DIM} strokeWidth="1" />
-
-    {/* Root */}
-    <circle cx="70" cy="18" r="12" stroke={BLUE} strokeWidth="1.2" fill="rgba(7,155,255,0.08)" />
-    <text x="70" y="22" textAnchor="middle" fill={BLUE} fontSize="9" fontFamily="var(--font-mono)">20</text>
-
-    {/* Level 1 */}
-    <circle cx="40" cy="44" r="11" stroke={VIOLET} strokeWidth="1.2" fill="rgba(128,87,232,0.06)" />
-    <text x="40" y="48" textAnchor="middle" fill={VIOLET} fontSize="9" fontFamily="var(--font-mono)">10</text>
-    <circle cx="100" cy="44" r="11" stroke={PURPLE} strokeWidth="1.2" fill="rgba(185,154,255,0.06)" />
-    <text x="100" y="48" textAnchor="middle" fill={PURPLE} fontSize="9" fontFamily="var(--font-mono)">30</text>
-
-    {/* Level 2 Leaves */}
-    <circle cx="22" cy="72" r="9" stroke={BLUE_DIM} strokeWidth="1" fill="rgba(7,155,255,0.04)" />
-    <text x="22" y="75" textAnchor="middle" fill={BLUE} fontSize="8" fontFamily="var(--font-mono)">5</text>
-    <circle cx="118" cy="72" r="9" stroke={PURPLE_DIM} strokeWidth="1" fill="rgba(185,154,255,0.04)" />
-    <text x="118" y="75" textAnchor="middle" fill={PURPLE} fontSize="8" fontFamily="var(--font-mono)">35</text>
-  </svg>
-);
-
-/** Tree Node AVL with balance factor */
-export const TreeNodeAVL: React.FC = () => (
-  <svg width="110" height="70" viewBox="0 0 110 70" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <line x1="55" y1="20" x2="28" y2="50" stroke={BLUE_DIM} strokeWidth="1" />
-    <line x1="55" y1="20" x2="82" y2="50" stroke={BLUE_DIM} strokeWidth="1" />
-
-    <circle cx="55" cy="18" r="14" stroke={BLUE} strokeWidth="1.2" fill="rgba(7,155,255,0.08)" />
-    <text x="55" y="21" textAnchor="middle" fill={BLUE} fontSize="9" fontFamily="var(--font-mono)">50</text>
-    <text x="76" y="14" fill={VIOLET} fontSize="7" fontFamily="var(--font-mono)">bf:0</text>
-
-    <circle cx="28" cy="50" r="11" stroke={VIOLET} strokeWidth="1" fill="rgba(128,87,232,0.06)" />
-    <text x="28" y="53" textAnchor="middle" fill={VIOLET} fontSize="8" fontFamily="var(--font-mono)">25</text>
-
-    <circle cx="82" cy="50" r="11" stroke={PURPLE} strokeWidth="1" fill="rgba(185,154,255,0.06)" />
-    <text x="82" y="53" textAnchor="middle" fill={PURPLE} fontSize="8" fontFamily="var(--font-mono)">75</text>
-  </svg>
-);
-
-/** 4-Node Graph Network */
-export const GraphHero: React.FC = () => (
-  <svg width="110" height="96" viewBox="0 0 110 96" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <line x1="28" y1="24" x2="78" y2="18" stroke={VIOLET_DIM} strokeWidth="0.9" />
-    <line x1="28" y1="24" x2="22" y2="70" stroke={VIOLET_DIM} strokeWidth="0.9" />
-    <line x1="78" y1="18" x2="84" y2="68" stroke={VIOLET_DIM} strokeWidth="0.9" />
-    <line x1="22" y1="70" x2="84" y2="68" stroke={VIOLET_DIM} strokeWidth="0.9" />
-    <line x1="28" y1="24" x2="84" y2="68" stroke={VIOLET_DIM} strokeWidth="0.9" />
-
-    <circle cx="28" cy="24" r="11" stroke={VIOLET} strokeWidth="1.2" fill="rgba(128,87,232,0.08)" />
-    <text x="28" y="28" textAnchor="middle" fill={VIOLET} fontSize="9" fontFamily="var(--font-mono)">A</text>
-    <circle cx="78" cy="18" r="11" stroke={BLUE} strokeWidth="1.2" fill="rgba(7,155,255,0.08)" />
-    <text x="78" y="22" textAnchor="middle" fill={BLUE} fontSize="9" fontFamily="var(--font-mono)">B</text>
-    <circle cx="22" cy="70" r="11" stroke={PURPLE} strokeWidth="1.2" fill="rgba(185,154,255,0.06)" />
-    <text x="22" y="74" textAnchor="middle" fill={PURPLE} fontSize="9" fontFamily="var(--font-mono)">C</text>
-    <circle cx="84" cy="68" r="11" stroke={BLUE} strokeWidth="1.2" fill="rgba(7,155,255,0.06)" />
-    <text x="84" y="72" textAnchor="middle" fill={BLUE} fontSize="9" fontFamily="var(--font-mono)">D</text>
-  </svg>
-);
-
-/** Directed Acyclic Graph: v1 ──► v2 ──► v3 */
-export const DirectedGraph: React.FC = () => (
-  <svg width="150" height="70" viewBox="0 0 150 70" fill="none" xmlns="http://www.w3.org/2000/svg">
-    {/* v1 to v2 */}
-    <line x1="32" y1="25" x2="68" y2="25" stroke={BLUE_DIM} strokeWidth="1.2" />
-    <polygon points="68,22 68,28 72,25" fill={BLUE_DIM} />
-    {/* v1 to v3 */}
-    <line x1="26" y1="36" x2="52" y2="52" stroke={VIOLET_DIM} strokeWidth="1" />
-    <polygon points="50,49 55,54 55,48" fill={VIOLET_DIM} />
-    {/* v2 to v3 */}
-    <line x1="80" y1="35" x2="68" y2="48" stroke={PURPLE_DIM} strokeWidth="1" />
-    <polygon points="67,45 66,51 72,49" fill={PURPLE_DIM} />
-
-    <circle cx="22" cy="25" r="11" stroke={BLUE} strokeWidth="1.2" fill="rgba(7,155,255,0.08)" />
-    <text x="22" y="29" textAnchor="middle" fill={BLUE} fontSize="8" fontFamily="var(--font-mono)">v1</text>
-
-    <circle cx="84" cy="25" r="11" stroke={PURPLE} strokeWidth="1.2" fill="rgba(185,154,255,0.06)" />
-    <text x="84" y="29" textAnchor="middle" fill={PURPLE} fontSize="8" fontFamily="var(--font-mono)">v2</text>
-
-    <circle cx="60" cy="56" r="10" stroke={VIOLET} strokeWidth="1.2" fill="rgba(128,87,232,0.06)" />
-    <text x="60" y="59" textAnchor="middle" fill={VIOLET} fontSize="8" fontFamily="var(--font-mono)">v3</text>
-  </svg>
-);
-
-/** Graph Cycle (3-node triangle with weights) */
-export const GraphCycle: React.FC = () => (
-  <svg width="110" height="90" viewBox="0 0 110 90" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <line x1="55" y1="18" x2="25" y2="68" stroke={BLUE_DIM} strokeWidth="1" />
-    <line x1="55" y1="18" x2="85" y2="68" stroke={VIOLET_DIM} strokeWidth="1" />
-    <line x1="25" y1="68" x2="85" y2="68" stroke={PURPLE_DIM} strokeWidth="1" />
-
-    <text x="34" y="40" fill={BLUE_SUBTLE} fontSize="7" fontFamily="var(--font-mono)">w:4</text>
-    <text x="74" y="40" fill={VIOLET_DIM} fontSize="7" fontFamily="var(--font-mono)">w:6</text>
-    <text x="55" y="80" textAnchor="middle" fill={PURPLE_DIM} fontSize="7" fontFamily="var(--font-mono)">w:2</text>
-
-    <circle cx="55" cy="18" r="11" stroke={BLUE} strokeWidth="1.2" fill="rgba(7,155,255,0.08)" />
-    <text x="55" y="22" textAnchor="middle" fill={BLUE} fontSize="9" fontFamily="var(--font-mono)">u</text>
-
-    <circle cx="25" cy="68" r="11" stroke={VIOLET} strokeWidth="1.2" fill="rgba(128,87,232,0.06)" />
-    <text x="25" y="72" textAnchor="middle" fill={VIOLET} fontSize="9" fontFamily="var(--font-mono)">v</text>
-
-    <circle cx="85" cy="68" r="11" stroke={PURPLE} strokeWidth="1.2" fill="rgba(185,154,255,0.06)" />
-    <text x="85" y="72" textAnchor="middle" fill={PURPLE} fontSize="9" fontFamily="var(--font-mono)">w</text>
-  </svg>
-);
-
-/** Vertical Stack: [pop, 42, 17, 8] */
-export const StackHero: React.FC = () => (
-  <svg width="52" height="106" viewBox="0 0 52 106" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <text x="26" y="9" textAnchor="middle" fill={BLUE_DIM} fontSize="8" fontFamily="var(--font-mono)">▲ pop</text>
-    {['42', '17', '8'].map((v, i) => {
-      const y = i * 27 + 16;
-      return (
-        <g key={i}>
-          <rect x="2" y={y} width="48" height="23" rx="4" stroke={BLUE} strokeWidth="1.2" fill="rgba(7,155,255,0.06)" />
-          <text x="26" y={y + 15} textAnchor="middle" fill={BLUE} fontSize="10" fontFamily="var(--font-mono)">{v}</text>
-        </g>
-      );
-    })}
-  </svg>
-);
-
-/** Call Stack Frames: main() -> partition() -> quickSort() */
-export const CallStackFrames: React.FC = () => (
-  <svg width="105" height="96" viewBox="0 0 105 96" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <text x="4" y="9" fill={BLUE} fontSize="7" fontFamily="var(--font-mono)" fontWeight="700">CALL STACK</text>
-    {[
-      { fn: 'quickSort()', color: BLUE, bg: 'rgba(7,155,255,0.12)' },
-      { fn: 'partition()', color: PURPLE, bg: 'rgba(185,154,255,0.06)' },
-      { fn: 'main()', color: VIOLET, bg: 'rgba(128,87,232,0.06)' },
-    ].map((f, i) => {
-      const y = i * 26 + 14;
-      return (
-        <g key={i}>
-          <rect x="2" y={y} width="100" height="22" rx="3" stroke={f.color} strokeWidth="1" fill={f.bg} />
-          <text x="8" y={y + 14} fill={f.color} fontSize="8" fontFamily="var(--font-mono)">{f.fn}</text>
-        </g>
-      );
-    })}
-  </svg>
-);
-
-/** Stack Push Operation */
-export const StackPush: React.FC = () => (
-  <svg width="68" height="98" viewBox="0 0 68 98" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <text x="34" y="8" textAnchor="middle" fill={PURPLE} fontSize="8" fontFamily="var(--font-mono)">push(50) ▼</text>
-    {['50', '25', '10'].map((v, i) => {
-      const y = i * 26 + 14;
-      const isTop = i === 0;
-      return (
-        <g key={i}>
-          <rect
-            x="4"
-            y={y}
-            width="60"
-            height="22"
-            rx="4"
-            stroke={isTop ? PURPLE : BLUE}
-            strokeWidth={isTop ? 1.4 : 1}
-            fill={isTop ? 'rgba(185,154,255,0.12)' : 'rgba(7,155,255,0.05)'}
-          />
-          <text x="34" y={y + 15} textAnchor="middle" fill={isTop ? PURPLE : BLUE} fontSize="10" fontFamily="var(--font-mono)">{v}</text>
-        </g>
-      );
-    })}
-  </svg>
-);
-
-/** Horizontal Queue: enq ▶ [A][B][C][D] ▶ deq */
-export const QueueHero: React.FC = () => (
-  <svg width="190" height="42" viewBox="0 0 190 42" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <text x="0" y="24" fill={PURPLE_DIM} fontSize="7" fontFamily="var(--font-mono)">enq ▶</text>
-    {['A', 'B', 'C', 'D'].map((v, i) => {
-      const x = i * 36 + 28;
-      return (
-        <g key={i}>
-          <rect x={x} y="8" width="32" height="26" rx="4" stroke={PURPLE} strokeWidth="1.2" fill="rgba(185,154,255,0.06)" />
-          <text x={x + 16} y="25" textAnchor="middle" fill={PURPLE} fontSize="10" fontFamily="var(--font-mono)">{v}</text>
-        </g>
-      );
-    })}
-    <text x="174" y="24" fill={PURPLE_DIM} fontSize="7" fontFamily="var(--font-mono)">▶ deq</text>
-  </svg>
-);
-
-/** Queue Buffer with front & rear pointers */
-export const QueueBuffer: React.FC = () => (
-  <svg width="170" height="48" viewBox="0 0 170 48" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <text x="16" y="8" textAnchor="middle" fill={BLUE} fontSize="7" fontFamily="var(--font-mono)">front</text>
-    <text x="146" y="8" textAnchor="middle" fill={PURPLE} fontSize="7" fontFamily="var(--font-mono)">rear</text>
-    {[101, 102, 103].map((v, i) => {
-      const x = i * 42 + 22;
-      return (
-        <g key={i}>
-          <rect x={x} y="12" width="38" height="26" rx="3" stroke={i === 0 ? BLUE : PURPLE} strokeWidth="1.1" fill="rgba(7,155,255,0.06)" />
-          <text x={x + 19} y="29" textAnchor="middle" fill={i === 0 ? BLUE : PURPLE} fontSize="9" fontFamily="var(--font-mono)">{v}</text>
-        </g>
-      );
-    })}
-  </svg>
-);
+              <div
+                style={{
+                  flex: 1.25,
+                  padding: '2px 4px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  justifyContent: 'center',
+                  alignItems: 'center',
+                  background: 'rgba(255, 255, 255, 0.02)',
+                }}
+              >
+                <span style={{ fontSize: '6px', fontWeight: 700, color: '#737D8C', letterSpacing: '0.5px' }}>
+                  NEXT
+                </span>
+                <span style={{ fontSize: '9px', fontFamily: 'var(--font-mono)', color: node.nextAddr ? '#58A6FF' : '#8B949E' }}>
+                  {node.nextAddr || 'null'}
+                </span>
+              </div>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+};
 
 /* ─────────────────────────────────────────────────────────────
-   CODE SYMBOLS SNIPPETS
+   2. D3-FORCE INTERACTIVE BINARY TREE
+   Every tree node springs back to its branch position when released!
    ───────────────────────────────────────────────────────────── */
 
-export const CodeSymbolsHero1: React.FC = () => (
-  <svg width="80" height="60" viewBox="0 0 80 60" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <text x="4" y="16" fill={BLUE_DIM} fontSize="14" fontFamily="var(--font-mono)">{'{ }'}</text>
-    <text x="8" y="38" fill={VIOLET_DIM} fontSize="11" fontFamily="var(--font-mono)">*ptr</text>
-    <text x="2" y="55" fill={PURPLE_DIM} fontSize="10" fontFamily="var(--font-mono)">C++</text>
-  </svg>
-);
+interface D3TreeNode extends SimulationNodeDatum {
+  id: string;
+  val: number;
+  label: string;
+  targetX: number;
+  targetY: number;
+  radius: number;
+  color: string;
+}
 
-export const CodeSymbolsHero2: React.FC = () => (
-  <svg width="70" height="50" viewBox="0 0 70 50" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <text x="4" y="16" fill={VIOLET_DIM} fontSize="12" fontFamily="var(--font-mono)">[ ]</text>
-    <text x="6" y="34" fill={BLUE_DIM} fontSize="10" fontFamily="var(--font-mono)">&amp;&amp;</text>
-    <text x="2" y="47" fill={PURPLE_DIM} fontSize="9" fontFamily="var(--font-mono)">→</text>
-  </svg>
-);
+interface D3TreeLink extends SimulationLinkDatum<D3TreeNode> {
+  source: string | D3TreeNode;
+  target: string | D3TreeNode;
+  distance: number;
+  strength: number;
+}
 
-export const CodeSymbolsFeatures: React.FC = () => (
-  <svg width="120" height="54" viewBox="0 0 120 54" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <text x="4" y="14" fill={BLUE_DIM} fontSize="10" fontFamily="var(--font-mono)">int* p = &amp;val;</text>
-    <text x="4" y="32" fill={VIOLET_DIM} fontSize="9" fontFamily="var(--font-mono)">template&lt;typename T&gt;</text>
-    <text x="4" y="48" fill={PURPLE_DIM} fontSize="8" fontFamily="var(--font-mono)">const auto&amp;</text>
-  </svg>
-);
+export const D3InteractiveBinaryTree: React.FC = () => {
+  const simulationRef = useRef<Simulation<D3TreeNode, D3TreeLink> | null>(null);
 
-export const CodeSymbolsAlgorithms: React.FC = () => (
-  <svg width="110" height="50" viewBox="0 0 110 50" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <text x="4" y="14" fill={PURPLE_DIM} fontSize="10" fontFamily="var(--font-mono)">head-&gt;next</text>
-    <text x="4" y="31" fill={BLUE_DIM} fontSize="9" fontFamily="var(--font-mono)">nullptr_t</text>
-    <text x="4" y="46" fill={VIOLET_DIM} fontSize="8" fontFamily="var(--font-mono)">size_t O(log n)</text>
-  </svg>
-);
+  const initialTreeNodes = useRef<D3TreeNode[]>([
+    { id: 'tree-root', val: 50, label: 'root', targetX: 90, targetY: 30, x: 90, y: 30, radius: 22, color: '#3B82F6' },
+    { id: 'tree-left', val: 25, label: 'L', targetX: 35, targetY: 100, x: 35, y: 100, radius: 19, color: '#168BFF' },
+    { id: 'tree-right', val: 75, label: 'R', targetX: 145, targetY: 100, x: 145, y: 100, radius: 19, color: '#B99AFF' },
+  ]);
 
-export const CodeSymbolsWorkflow: React.FC = () => (
-  <svg width="115" height="50" viewBox="0 0 115 50" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <text x="4" y="14" fill={BLUE_DIM} fontSize="9" fontFamily="var(--font-mono)">delete[] arr;</text>
-    <text x="4" y="30" fill={PURPLE_DIM} fontSize="9" fontFamily="var(--font-mono)">new Node&#123;val&#125;;</text>
-    <text x="4" y="46" fill={VIOLET_DIM} fontSize="8" fontFamily="var(--font-mono)">std::vector&lt;int&gt;</text>
-  </svg>
-);
+  const initialTreeLinks = useRef<D3TreeLink[]>([
+    { source: 'tree-root', target: 'tree-left', distance: 80, strength: 0.4 },
+    { source: 'tree-root', target: 'tree-right', distance: 80, strength: 0.4 },
+  ]);
 
-export const CodeSymbolsLearning: React.FC = () => (
-  <svg width="100" height="48" viewBox="0 0 100 48" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <text x="4" y="14" fill={VIOLET_DIM} fontSize="10" fontFamily="var(--font-mono)">assert(p != null);</text>
-    <text x="4" y="31" fill={BLUE_DIM} fontSize="9" fontFamily="var(--font-mono)">#include &lt;memory&gt;</text>
-    <text x="4" y="45" fill={PURPLE_DIM} fontSize="8" fontFamily="var(--font-mono)">0x7FFEE4B0</text>
-  </svg>
-);
+  const [positions, setPositions] = useState<{ [id: string]: { x: number; y: number } }>({
+    'tree-root': { x: 90, y: 30 },
+    'tree-left': { x: 35, y: 100 },
+    'tree-right': { x: 145, y: 100 },
+  });
 
-export const CodeSymbolsCTA: React.FC = () => (
-  <svg width="90" height="44" viewBox="0 0 90 44" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <text x="4" y="14" fill={BLUE_DIM} fontSize="11" fontFamily="var(--font-mono)">int main() &#123;</text>
-    <text x="14" y="28" fill={PURPLE_DIM} fontSize="9" fontFamily="var(--font-mono)">return 0;</text>
-    <text x="4" y="40" fill={BLUE_DIM} fontSize="11" fontFamily="var(--font-mono)">&#125;</text>
-  </svg>
-);
+  const [activeDragId, setActiveDragId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const nodes = initialTreeNodes.current;
+    const links = initialTreeLinks.current;
+
+    const sim = forceSimulation<D3TreeNode>(nodes)
+      .force(
+        'link',
+        forceLink<D3TreeNode, D3TreeLink>(links)
+          .id((d) => d.id)
+          .distance((l) => l.distance)
+          .strength((l) => l.strength)
+      )
+      .force('charge', forceManyBody<D3TreeNode>().strength(-120).distanceMax(200))
+      .force('collide', forceCollide<D3TreeNode>().radius((d) => d.radius + 6))
+      .force('centerX', forceX<D3TreeNode>().x((d) => d.targetX).strength(0.22)) // Strong return home
+      .force('centerY', forceY<D3TreeNode>().y((d) => d.targetY).strength(0.22)) // Strong return home
+      .velocityDecay(0.35)
+      .alphaDecay(0.02);
+
+    sim.on('tick', () => {
+      const updated: { [id: string]: { x: number; y: number } } = {};
+      nodes.forEach((n) => {
+        if (n.x !== undefined && n.y !== undefined) {
+          updated[n.id] = { x: n.x, y: n.y };
+        }
+      });
+      setPositions(updated);
+    });
+
+    // Idle at mount since nodes are already at target coordinates
+    sim.stop();
+    simulationRef.current = sim;
+
+    return () => {
+      sim.stop();
+    };
+  }, []);
+
+  const handlePointerDown = (id: string, e: React.PointerEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const sim = simulationRef.current;
+    if (!sim) return;
+
+    const targetNode = initialTreeNodes.current.find((n) => n.id === id);
+    if (!targetNode) return;
+
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    setActiveDragId(id);
+
+    sim.alphaTarget(0.4).restart();
+    targetNode.fx = targetNode.x;
+    targetNode.fy = targetNode.y;
+
+    const startClientX = e.clientX;
+    const startClientY = e.clientY;
+    const origX = targetNode.x!;
+    const origY = targetNode.y!;
+
+    const onPointerMove = (moveEv: PointerEvent) => {
+      targetNode.fx = origX + (moveEv.clientX - startClientX);
+      targetNode.fy = origY + (moveEv.clientY - startClientY);
+    };
+
+    const onPointerUp = (upEv: PointerEvent) => {
+      try {
+        (e.currentTarget as HTMLElement).releasePointerCapture(upEv.pointerId);
+      } catch {}
+      window.removeEventListener('pointermove', onPointerMove);
+      window.removeEventListener('pointerup', onPointerUp);
+      // Release anchor and wake simulation so it springs back to original branch position!
+      targetNode.fx = null;
+      targetNode.fy = null;
+      sim.alpha(1).restart();
+      setActiveDragId(null);
+    };
+
+    window.addEventListener('pointermove', onPointerMove);
+    window.addEventListener('pointerup', onPointerUp);
+  };
+
+  return (
+    <div style={{ position: 'relative', width: '180px', height: '140px', pointerEvents: 'auto', userSelect: 'none' }}>
+      <svg style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', overflow: 'visible', pointerEvents: 'none' }}>
+        {initialTreeLinks.current.map((link, i) => {
+          const srcId = typeof link.source === 'string' ? link.source : link.source.id;
+          const tgtId = typeof link.target === 'string' ? link.target : link.target.id;
+          const srcPos = positions[srcId];
+          const tgtPos = positions[tgtId];
+          if (!srcPos || !tgtPos) return null;
+
+          return (
+            <line
+              key={i}
+              x1={srcPos.x}
+              y1={srcPos.y}
+              x2={tgtPos.x}
+              y2={tgtPos.y}
+              stroke="#168BFF"
+              strokeWidth="1.8"
+              strokeDasharray="4 2"
+              style={{ filter: 'drop-shadow(0 0 4px rgba(22, 139, 255, 0.4))' }}
+            />
+          );
+        })}
+      </svg>
+
+      {initialTreeNodes.current.map((n) => {
+        const pos = positions[n.id] || { x: n.targetX, y: n.targetY };
+        const isDragging = activeDragId === n.id;
+        const size = n.radius * 2;
+
+        return (
+          <div
+            key={n.id}
+            onPointerDown={(e) => handlePointerDown(n.id, e)}
+            style={{
+              position: 'absolute',
+              left: `${pos.x - n.radius}px`,
+              top: `${pos.y - n.radius}px`,
+              width: `${size}px`,
+              height: `${size}px`,
+              borderRadius: '50%',
+              background: 'radial-gradient(circle at 35% 35%, #1F2937 0%, #111827 100%)',
+              border: `2px solid ${isDragging ? '#00D2FF' : n.color}`,
+              boxShadow: isDragging
+                ? '0 0 24px rgba(0, 210, 255, 0.8), 0 8px 16px rgba(0,0,0,0.6)'
+                : '0 4px 14px rgba(0, 0, 0, 0.45)',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: isDragging ? 'grabbing' : 'grab',
+              zIndex: isDragging ? 100 : 5,
+              transform: isDragging ? 'scale(1.15)' : 'scale(1)',
+              transition: isDragging ? 'none' : 'box-shadow 0.2s ease, transform 0.15s ease',
+            }}
+          >
+            <span style={{ fontSize: '12px', fontWeight: 700, fontFamily: 'var(--font-mono)', color: '#F9FAFB' }}>
+              {n.val}
+            </span>
+            <span style={{ fontSize: '7px', fontFamily: 'var(--font-mono)', color: n.color }}>
+              {n.label}
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
+};
 
 /* ─────────────────────────────────────────────────────────────
-   SECTION-SPECIFIC DECORATION EXPORTS
+   3. D3/SPRING INTERACTIVE STACK CARDS (SNAP TO ORIGIN)
+   ───────────────────────────────────────────────────────────── */
+
+export const D3InteractiveStack: React.FC = () => {
+  const elements = [
+    { val: 42, idx: 2, isTop: true },
+    { val: 17, idx: 1 },
+    { val: 8, idx: 0 },
+  ];
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', width: '135px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0 4px' }}>
+        <span style={{ fontSize: '8px', fontFamily: 'var(--font-mono)', fontWeight: 700, color: '#168BFF', letterSpacing: '0.6px' }}>
+          STACK (LIFO)
+        </span>
+        <span style={{ fontSize: '8px', fontFamily: 'var(--font-mono)', color: '#737D8C' }}>SP: 0x7FFF</span>
+      </div>
+
+      {elements.map((elem, i) => (
+        <motion.div
+          key={i}
+          drag
+          dragSnapToOrigin
+          dragElastic={0.3}
+          dragTransition={{ bounceStiffness: 500, bounceDamping: 25 }}
+          whileHover={{ scale: 1.04, filter: 'drop-shadow(0 0 12px rgba(22, 139, 255, 0.7))' }}
+          whileDrag={{ scale: 1.1, cursor: 'grabbing', zIndex: 50, filter: 'drop-shadow(0 0 20px rgba(0, 210, 255, 0.9))' }}
+          style={{
+            height: '38px',
+            background: elem.isTop
+              ? 'linear-gradient(135deg, rgba(20, 43, 77, 0.95) 0%, rgba(21, 27, 35, 0.95) 100%)'
+              : 'linear-gradient(135deg, rgba(21, 27, 35, 0.95) 0%, rgba(28, 35, 45, 0.9) 100%)',
+            border: elem.isTop ? '1.5px solid #388BFD' : '1.5px solid #2A3441',
+            borderRadius: '8px',
+            boxShadow: elem.isTop
+              ? '0 4px 16px rgba(0, 102, 255, 0.45), 0 0 12px rgba(0, 210, 255, 0.3)'
+              : '0 2px 8px rgba(0, 0, 0, 0.35)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: '0 12px',
+            cursor: 'grab',
+            userSelect: 'none',
+            touchAction: 'none',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <span style={{ fontSize: '9px', fontFamily: 'var(--font-mono)', color: '#737D8C', fontWeight: 600 }}>
+              [{elem.idx}]
+            </span>
+            {elem.isTop && (
+              <span
+                style={{
+                  fontSize: '7px',
+                  fontWeight: 700,
+                  fontFamily: 'var(--font-mono)',
+                  color: '#00D2FF',
+                  background: 'rgba(0, 210, 255, 0.15)',
+                  padding: '1px 5px',
+                  borderRadius: '3px',
+                }}
+              >
+                TOP
+              </span>
+            )}
+          </div>
+          <span style={{ fontSize: '15px', fontFamily: 'var(--font-mono)', fontWeight: 700, color: elem.isTop ? '#00D2FF' : '#F5F7FA' }}>
+            {elem.val}
+          </span>
+        </motion.div>
+      ))}
+    </div>
+  );
+};
+
+/* ─────────────────────────────────────────────────────────────
+   4. D3/SPRING INTERACTIVE ARRAY CELLS (SNAP TO ORIGIN)
+   ───────────────────────────────────────────────────────────── */
+
+export const D3InteractiveArray: React.FC = () => {
+  const cells = [
+    { val: 4, idx: 0, addr: '0x1000' },
+    { val: 9, idx: 1, addr: '0x1004' },
+    { val: 16, idx: 2, addr: '0x1008', isActive: true },
+    { val: 25, idx: 3, addr: '0x100C' },
+  ];
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0 2px' }}>
+        <span style={{ fontSize: '8px', fontFamily: 'var(--font-mono)', fontWeight: 700, color: '#168BFF', letterSpacing: '0.5px' }}>
+          int arr[4] = &#123;4, 9, 16, 25&#125;;
+        </span>
+        <span style={{ fontSize: '8px', fontFamily: 'var(--font-mono)', color: '#3CCB83' }}>&amp;arr[0] = 0x1000</span>
+      </div>
+
+      <div style={{ display: 'inline-flex', alignItems: 'flex-start', gap: '4px' }}>
+        {cells.map((c, i) => (
+          <motion.div
+            key={i}
+            drag
+            dragSnapToOrigin
+            dragElastic={0.3}
+            dragTransition={{ bounceStiffness: 500, bounceDamping: 25 }}
+            whileHover={{ scale: 1.08, filter: 'drop-shadow(0 0 12px rgba(22, 139, 255, 0.7))' }}
+            whileDrag={{ scale: 1.15, cursor: 'grabbing', zIndex: 50, filter: 'drop-shadow(0 0 20px rgba(0, 210, 255, 0.9))' }}
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              width: '42px',
+              padding: '6px 0',
+              borderRadius: '6px',
+              background: c.isActive
+                ? 'linear-gradient(180deg, rgba(22, 139, 255, 0.22) 0%, rgba(22, 139, 255, 0.08) 100%)'
+                : 'linear-gradient(180deg, #161B22 0%, #0D1117 100%)',
+              border: c.isActive ? '1.5px solid #388BFD' : '1px solid #30363D',
+              boxShadow: c.isActive ? '0 8px 20px rgba(0, 102, 255, 0.45)' : 'none',
+              cursor: 'grab',
+              userSelect: 'none',
+              touchAction: 'none',
+            }}
+          >
+            <span style={{ fontSize: '7px', fontFamily: 'var(--font-mono)', color: c.isActive ? '#168BFF' : '#737D8C', fontWeight: 700 }}>
+              [{c.idx}]
+            </span>
+            <span style={{ fontSize: '15px', fontFamily: 'var(--font-mono)', fontWeight: 700, color: c.isActive ? '#00D2FF' : '#F0F6FC', margin: '2px 0' }}>
+              {c.val}
+            </span>
+            <span style={{ fontSize: '7px', fontFamily: 'var(--font-mono)', color: '#56606E' }}>
+              {c.addr}
+            </span>
+          </motion.div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+/* ─────────────────────────────────────────────────────────────
+   CALL STACK & QUEUE & POINTER GUARDS
+   ───────────────────────────────────────────────────────────── */
+
+export const VsCodeCallStack: React.FC = () => {
+  return (
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '4px',
+        width: '150px',
+        background: '#0D1521',
+        border: '1px solid #26364A',
+        borderRadius: '8px',
+        padding: '8px',
+        boxShadow: '0 8px 24px rgba(0, 0, 0, 0.5)',
+      }}
+    >
+      <div style={{ fontSize: '8px', fontFamily: 'var(--font-mono)', fontWeight: 700, color: '#168BFF', letterSpacing: '0.6px' }}>
+        CALL STACK (DEPTH: 3)
+      </div>
+
+      {[
+        { fn: 'quickSort(arr, 0, 2)', color: '#168BFF', bg: 'rgba(22, 139, 255, 0.15)', border: '#168BFF' },
+        { fn: 'partition(arr, 0, 4)', color: '#B99AFF', bg: 'rgba(185, 154, 255, 0.08)', border: '#8057E8' },
+        { fn: 'main()', color: '#A7B5C7', bg: 'rgba(255, 255, 255, 0.04)', border: '#30363D' },
+      ].map((frame, i) => (
+        <div
+          key={i}
+          style={{
+            padding: '4px 8px',
+            borderRadius: '4px',
+            background: frame.bg,
+            border: `1px solid ${frame.border}`,
+            fontSize: '9px',
+            fontFamily: 'var(--font-mono)',
+            color: frame.color,
+            fontWeight: 600,
+            whiteSpace: 'nowrap',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+          }}
+        >
+          {frame.fn}
+        </div>
+      ))}
+    </div>
+  );
+};
+
+export const VsCodeQueueBuffer: React.FC = () => {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0 2px' }}>
+        <span style={{ fontSize: '8px', fontFamily: 'var(--font-mono)', fontWeight: 700, color: '#36C779' }}>
+          FRONT ▶
+        </span>
+        <span style={{ fontSize: '8px', fontFamily: 'var(--font-mono)', fontWeight: 700, color: '#0066FF' }}>
+          ▶ REAR
+        </span>
+      </div>
+
+      <div style={{ display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+        {['101', '102', '103', '104'].map((val, i) => (
+          <div
+            key={i}
+            style={{
+              padding: '6px 10px',
+              borderRadius: '6px',
+              background: 'linear-gradient(180deg, #161B22 0%, #0D1117 100%)',
+              border: i === 0 ? '1.5px solid #36C779' : i === 3 ? '1.5px solid #0066FF' : '1px solid #30363D',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.4)',
+              textAlign: 'center',
+            }}
+          >
+            <span style={{ fontSize: '13px', fontFamily: 'var(--font-mono)', fontWeight: 700, color: '#F0F6FC' }}>
+              {val}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+export const VsCodePointerGuard: React.FC = () => {
+  return (
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '4px',
+        width: '145px',
+        background: '#0D1521',
+        border: '1px solid rgba(60, 203, 131, 0.4)',
+        borderRadius: '8px',
+        padding: '8px 10px',
+        boxShadow: '0 4px 16px rgba(60, 203, 131, 0.2)',
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+        <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#3CCB83' }} />
+        <span style={{ fontSize: '8px', fontFamily: 'var(--font-mono)', fontWeight: 700, color: '#3CCB83' }}>
+          POINTER DIAGNOSTIC
+        </span>
+      </div>
+      <div style={{ fontSize: '9px', fontFamily: 'var(--font-mono)', color: '#F4F7FB' }}>
+        Node* ptr = 0x7FA0
+      </div>
+      <div style={{ fontSize: '8px', fontFamily: 'var(--font-mono)', color: '#737D8C' }}>
+        Status: Valid Heap
+      </div>
+    </div>
+  );
+};
+
+/* ─────────────────────────────────────────────────────────────
+   BACKWARD-COMPATIBLE WRAPPERS FOR OLD NAMES
+   ───────────────────────────────────────────────────────────── */
+export const LinkedListHero = D3InteractiveLinkedList;
+export const LinkedListPointer = D3InteractiveLinkedList;
+export const DoublyLinkedList = D3InteractiveLinkedList;
+export const LinkedListTerminator = D3InteractiveLinkedList;
+export const ArrayHero = D3InteractiveArray;
+export const ArrayIndexed = D3InteractiveArray;
+export const ArrayBinarySearch = D3InteractiveArray;
+export const ArraySorting = D3InteractiveArray;
+export const BinaryTreeHero = D3InteractiveBinaryTree;
+export const BinarySearchTree5 = D3InteractiveBinaryTree;
+export const TreeNodeAVL = D3InteractiveBinaryTree;
+export const StackHero = D3InteractiveStack;
+export const StackPush = D3InteractiveStack;
+export const CallStackFrames = VsCodeCallStack;
+export const QueueHero = VsCodeQueueBuffer;
+export const QueueBuffer = VsCodeQueueBuffer;
+export const GraphHero = D3InteractiveBinaryTree;
+export const DirectedGraph = D3InteractiveLinkedList;
+export const GraphCycle = D3InteractiveBinaryTree;
+export const CodeSymbolsHero1 = VsCodePointerGuard;
+export const CodeSymbolsHero2 = VsCodeCallStack;
+export const CodeSymbolsFeatures = VsCodePointerGuard;
+export const CodeSymbolsAlgorithms = VsCodeCallStack;
+export const CodeSymbolsWorkflow = VsCodePointerGuard;
+export const CodeSymbolsLearning = VsCodeCallStack;
+export const CodeSymbolsCTA = VsCodePointerGuard;
+
+/* ─────────────────────────────────────────────────────────────
+   SECTION-SPECIFIC DISTRIBUTED MOVING & DRAGGABLE DATA STRUCTURES
+   With .dsa-bg-layer class for desktop-only margin visibility!
    ───────────────────────────────────────────────────────────── */
 
 /** Floating elements for Hero section */
 export const HeroFloatingDSA: React.FC = () => {
   return (
-    <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 1, overflow: 'visible' }} aria-hidden="true">
-      {/* Upper-left Linked List */}
-      <div style={{ ...wrapBase, top: '6%', left: '3%', transform: 'rotate(-3deg)' }} className="dsa-float dsa-float-1">
-        <LinkedListHero />
+    <div className="dsa-bg-layer" style={{ position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 3, overflow: 'visible' }} aria-hidden="true">
+      {/* Upper-left: D3 Force-Interactive Linked List with Individually Movable Nodes */}
+      <div style={{ position: 'absolute', top: '5%', left: '1%', transform: 'scale(0.85)', transformOrigin: 'top left' }}>
+        <D3InteractiveLinkedList />
       </div>
 
-      {/* Mid-left Binary Tree */}
-      <div style={{ ...wrapBase, top: '56%', left: '2%', transform: 'rotate(2deg)' }} className="dsa-float dsa-float-2">
-        <BinaryTreeHero />
+      {/* Mid-left: D3 Force Binary Tree (Individually Draggable Circular Nodes) */}
+      <div style={{ position: 'absolute', top: '52%', left: '2%' }}>
+        <D3InteractiveBinaryTree />
       </div>
 
-      {/* Lower-left Stack */}
-      <div style={{ ...wrapBase, bottom: '6%', left: '5%', transform: 'rotate(-2deg)' }} className="dsa-float dsa-float-3">
-        <StackHero />
+      {/* Lower-left: LIFO Stack with Spring Release Cards */}
+      <div style={{ position: 'absolute', bottom: '6%', left: '4%' }}>
+        <D3InteractiveStack />
       </div>
 
-      {/* Left Code Symbols */}
-      <div style={{ ...wrapBase, top: '34%', left: '2%', transform: 'rotate(4deg)' }} className="dsa-float dsa-float-7">
-        <CodeSymbolsHero1 />
+      {/* Upper-right: Call Stack Frames */}
+      <div style={{ position: 'absolute', top: '8%', right: '3%' }}>
+        <DraggableDSA>
+          <VsCodeCallStack />
+        </DraggableDSA>
       </div>
 
-      {/* Upper-right Graph */}
-      <div style={{ ...wrapBase, top: '8%', right: '3%', transform: 'rotate(3deg)' }} className="dsa-float dsa-float-4">
-        <GraphHero />
+      {/* Mid-right: Contiguous Array with Spring Pull */}
+      <div style={{ position: 'absolute', top: '52%', right: '3%' }}>
+        <D3InteractiveArray />
       </div>
 
-      {/* Mid-right Array */}
-      <div style={{ ...wrapBase, top: '54%', right: '3%', transform: 'rotate(-2deg)' }} className="dsa-float dsa-float-5">
-        <ArrayHero />
+      {/* Lower-right: FIFO Queue Buffer with FRONT & REAR */}
+      <div style={{ position: 'absolute', bottom: '6%', right: '4%' }}>
+        <DraggableDSA>
+          <VsCodeQueueBuffer />
+        </DraggableDSA>
+      </div>
+    </div>
+  );
+};
+
+/** Floating elements for 3D VsCodePreview Section */
+export const VsCodeFloatingDSA: React.FC = () => {
+  return (
+    <div className="dsa-bg-layer" style={{ position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 4, overflow: 'visible' }} aria-hidden="true">
+      {/* Left Margin: Real-Time Call Stack & Memory Guard */}
+      <div style={{ position: 'absolute', top: '15%', left: '2%' }}>
+        <DraggableDSA>
+          <VsCodeCallStack />
+        </DraggableDSA>
       </div>
 
-      {/* Lower-right Queue */}
-      <div style={{ ...wrapBase, bottom: '6%', right: '4%', transform: 'rotate(1deg)' }} className="dsa-float dsa-float-6">
-        <QueueHero />
+      <div style={{ position: 'absolute', top: '55%', left: '2%' }}>
+        <DraggableDSA>
+          <VsCodePointerGuard />
+        </DraggableDSA>
       </div>
 
-      {/* Right Code Symbols */}
-      <div style={{ ...wrapBase, top: '32%', right: '2%', transform: 'rotate(-5deg)' }} className="dsa-float dsa-float-8">
-        <CodeSymbolsHero2 />
+      {/* Right Margin: Live D3 Linked List Node Chain */}
+      <div style={{ position: 'absolute', top: '18%', right: '1%', transform: 'scale(0.8)', transformOrigin: 'top right' }}>
+        <D3InteractiveLinkedList />
+      </div>
+
+      <div style={{ position: 'absolute', top: '58%', right: '2%' }}>
+        <D3InteractiveStack />
       </div>
     </div>
   );
@@ -563,25 +1104,23 @@ export const HeroFloatingDSA: React.FC = () => {
 /** Floating elements for Features section */
 export const FeaturesFloatingDSA: React.FC = () => {
   return (
-    <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 1, overflow: 'visible' }} aria-hidden="true">
-      {/* Left flank: Pointer Chain */}
-      <div style={{ ...wrapBase, top: '22%', left: '2%', transform: 'rotate(-2deg)' }} className="dsa-float dsa-float-3">
-        <LinkedListPointer />
+    <div className="dsa-bg-layer" style={{ position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 3, overflow: 'visible' }} aria-hidden="true">
+      <div style={{ position: 'absolute', top: '16%', left: '1%', transform: 'scale(0.8)', transformOrigin: 'top left' }}>
+        <D3InteractiveLinkedList />
       </div>
 
-      {/* Left flank: Code snippet */}
-      <div style={{ ...wrapBase, bottom: '18%', left: '3%', transform: 'rotate(3deg)' }} className="dsa-float dsa-float-7">
-        <CodeSymbolsFeatures />
+      <div style={{ position: 'absolute', bottom: '15%', left: '3%' }}>
+        <DraggableDSA>
+          <VsCodePointerGuard />
+        </DraggableDSA>
       </div>
 
-      {/* Right flank: Indexed Array */}
-      <div style={{ ...wrapBase, top: '18%', right: '2%', transform: 'rotate(2deg)' }} className="dsa-float dsa-float-5">
-        <ArrayIndexed />
+      <div style={{ position: 'absolute', top: '16%', right: '2%' }}>
+        <D3InteractiveArray />
       </div>
 
-      {/* Right flank: Directed Graph */}
-      <div style={{ ...wrapBase, bottom: '15%', right: '3%', transform: 'rotate(-3deg)' }} className="dsa-float dsa-float-4">
-        <DirectedGraph />
+      <div style={{ position: 'absolute', bottom: '12%', right: '3%' }}>
+        <D3InteractiveBinaryTree />
       </div>
     </div>
   );
@@ -590,25 +1129,21 @@ export const FeaturesFloatingDSA: React.FC = () => {
 /** Floating elements for DataStructures / Algorithms section */
 export const AlgorithmsFloatingDSA: React.FC = () => {
   return (
-    <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 1, overflow: 'visible' }} aria-hidden="true">
-      {/* Left flank: Doubly Linked List */}
-      <div style={{ ...wrapBase, top: '14%', left: '2%', transform: 'rotate(2deg)' }} className="dsa-float dsa-float-1">
-        <DoublyLinkedList />
+    <div className="dsa-bg-layer" style={{ position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 3, overflow: 'visible' }} aria-hidden="true">
+      <div style={{ position: 'absolute', top: '12%', left: '1%', transform: 'scale(0.8)', transformOrigin: 'top left' }}>
+        <D3InteractiveLinkedList />
       </div>
 
-      {/* Left flank: Code Symbols */}
-      <div style={{ ...wrapBase, top: '65%', left: '3%', transform: 'rotate(-3deg)' }} className="dsa-float dsa-float-8">
-        <CodeSymbolsAlgorithms />
+      <div style={{ position: 'absolute', top: '65%', left: '3%' }}>
+        <D3InteractiveStack />
       </div>
 
-      {/* Right flank: 5-Node Balanced BST */}
-      <div style={{ ...wrapBase, top: '12%', right: '2%', transform: 'rotate(-2deg)' }} className="dsa-float dsa-float-2">
-        <BinarySearchTree5 />
+      <div style={{ position: 'absolute', top: '12%', right: '2%' }}>
+        <D3InteractiveBinaryTree />
       </div>
 
-      {/* Right flank: Binary Search Array */}
-      <div style={{ ...wrapBase, top: '68%', right: '2%', transform: 'rotate(3deg)' }} className="dsa-float dsa-float-6">
-        <ArrayBinarySearch />
+      <div style={{ position: 'absolute', top: '68%', right: '2%' }}>
+        <D3InteractiveArray />
       </div>
     </div>
   );
@@ -617,25 +1152,25 @@ export const AlgorithmsFloatingDSA: React.FC = () => {
 /** Floating elements for HowItWorks / Workflow section */
 export const WorkflowFloatingDSA: React.FC = () => {
   return (
-    <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 1, overflow: 'visible' }} aria-hidden="true">
-      {/* Left flank: Call Stack Frames */}
-      <div style={{ ...wrapBase, top: '25%', left: '3%', transform: 'rotate(-2deg)' }} className="dsa-float dsa-float-4">
-        <CallStackFrames />
+    <div className="dsa-bg-layer" style={{ position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 3, overflow: 'visible' }} aria-hidden="true">
+      <div style={{ position: 'absolute', top: '22%', left: '2%' }}>
+        <DraggableDSA>
+          <VsCodeCallStack />
+        </DraggableDSA>
       </div>
 
-      {/* Left flank: Code symbols */}
-      <div style={{ ...wrapBase, bottom: '12%', left: '2%', transform: 'rotate(3deg)' }} className="dsa-float dsa-float-7">
-        <CodeSymbolsWorkflow />
+      <div style={{ position: 'absolute', bottom: '12%', left: '2%' }}>
+        <DraggableDSA>
+          <VsCodePointerGuard />
+        </DraggableDSA>
       </div>
 
-      {/* Right flank: AVL Node */}
-      <div style={{ ...wrapBase, top: '20%', right: '3%', transform: 'rotate(2deg)' }} className="dsa-float dsa-float-3">
-        <TreeNodeAVL />
+      <div style={{ position: 'absolute', top: '18%', right: '2%' }}>
+        <D3InteractiveBinaryTree />
       </div>
 
-      {/* Right flank: Queue Buffer */}
-      <div style={{ ...wrapBase, bottom: '14%', right: '2%', transform: 'rotate(-1deg)' }} className="dsa-float dsa-float-5">
-        <QueueBuffer />
+      <div style={{ position: 'absolute', bottom: '14%', right: '2%' }}>
+        <D3InteractiveStack />
       </div>
     </div>
   );
@@ -644,20 +1179,19 @@ export const WorkflowFloatingDSA: React.FC = () => {
 /** Floating elements for LearningBenefits section */
 export const LearningFloatingDSA: React.FC = () => {
   return (
-    <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 1, overflow: 'visible' }} aria-hidden="true">
-      {/* Left flank: Graph cycle */}
-      <div style={{ ...wrapBase, top: '28%', left: '3%', transform: 'rotate(3deg)' }} className="dsa-float dsa-float-2">
-        <GraphCycle />
+    <div className="dsa-bg-layer" style={{ position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 3, overflow: 'visible' }} aria-hidden="true">
+      <div style={{ position: 'absolute', top: '24%', left: '2%' }}>
+        <DraggableDSA>
+          <VsCodePointerGuard />
+        </DraggableDSA>
       </div>
 
-      {/* Left flank: Code symbols */}
-      <div style={{ ...wrapBase, bottom: '18%', left: '2%', transform: 'rotate(-2deg)' }} className="dsa-float dsa-float-8">
-        <CodeSymbolsLearning />
+      <div style={{ position: 'absolute', bottom: '16%', left: '2%' }}>
+        <D3InteractiveStack />
       </div>
 
-      {/* Right flank: Sorting Array */}
-      <div style={{ ...wrapBase, top: '24%', right: '2%', transform: 'rotate(-3deg)' }} className="dsa-float dsa-float-6">
-        <ArraySorting />
+      <div style={{ position: 'absolute', top: '22%', right: '2%' }}>
+        <D3InteractiveArray />
       </div>
     </div>
   );
@@ -666,24 +1200,22 @@ export const LearningFloatingDSA: React.FC = () => {
 /** Floating elements for DownloadCTA section & Bottom */
 export const BottomCTAFloatingDSA: React.FC = () => {
   return (
-    <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 1, overflow: 'visible' }} aria-hidden="true">
-      {/* Left flank: Terminating linked list */}
-      <div style={{ ...wrapBase, top: '35%', left: '3%', transform: 'rotate(-3deg)' }} className="dsa-float dsa-float-1">
-        <LinkedListTerminator />
+    <div className="dsa-bg-layer" style={{ position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 3, overflow: 'visible' }} aria-hidden="true">
+      <div style={{ position: 'absolute', top: '25%', left: '1%', transform: 'scale(0.8)', transformOrigin: 'top left' }}>
+        <D3InteractiveLinkedList />
       </div>
 
-      {/* Left flank: Code symbols */}
-      <div style={{ ...wrapBase, bottom: '12%', left: '4%', transform: 'rotate(2deg)' }} className="dsa-float dsa-float-7">
-        <CodeSymbolsCTA />
+      <div style={{ position: 'absolute', bottom: '12%', left: '3%' }}>
+        <DraggableDSA>
+          <VsCodePointerGuard />
+        </DraggableDSA>
       </div>
 
-      {/* Right flank: Push Stack */}
-      <div style={{ ...wrapBase, top: '28%', right: '4%', transform: 'rotate(2deg)' }} className="dsa-float dsa-float-3">
-        <StackPush />
+      <div style={{ position: 'absolute', top: '25%', right: '3%' }}>
+        <D3InteractiveStack />
       </div>
     </div>
   );
 };
 
-/* Backward compatible alias */
 export const FloatingDSA = HeroFloatingDSA;

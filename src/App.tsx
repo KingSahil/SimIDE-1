@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { BackgroundEffects } from './components/BackgroundEffects';
 
+import { Navbar } from './components/Navbar';
 import { Hero } from './components/Hero';
 import { VsCodePreview } from './components/VsCodePreview';
 import { FeatureCards } from './components/FeatureCards';
@@ -22,7 +23,7 @@ export function App() {
       <BackgroundEffects />
 
       {/* Navigation Bar */}
-      
+      <Navbar onOpenDocs={() => setDocsOpen(true)} />
 
       {/* Main Content Sections */}
       <main>

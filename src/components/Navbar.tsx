@@ -12,8 +12,20 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenDocs }) => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   useEffect(() => {
+    let ticking = false;
+    let prevScrolled = false;
     const handleScroll = () => {
-      setIsScrolled(window.scrollY > 20);
+      if (!ticking) {
+        window.requestAnimationFrame(() => {
+          const nowScrolled = window.scrollY > 20;
+          if (nowScrolled !== prevScrolled) {
+            prevScrolled = nowScrolled;
+            setIsScrolled(nowScrolled);
+          }
+          ticking = false;
+        });
+        ticking = true;
+      }
     };
     window.addEventListener('scroll', handleScroll, { passive: true });
     return () => window.removeEventListener('scroll', handleScroll);
@@ -195,10 +207,9 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenDocs }) => {
               background: 'rgba(16, 26, 40, 0.8)',
               border: '1px solid var(--border-color)',
               color: 'var(--text-primary)',
-              borderRadius: '6px',
+              borderRadius: '8px',
               padding: '8px',
               cursor: 'pointer',
-              display: 'none',
               alignItems: 'center',
               justifyContent: 'center',
             }}

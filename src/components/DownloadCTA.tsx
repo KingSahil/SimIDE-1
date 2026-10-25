@@ -6,7 +6,7 @@ import { BottomCTAFloatingDSA } from './FloatingDSA';
 
 export const DownloadCTA: React.FC = () => {
   const [copied, setCopied] = useState(false);
-  const installCmd = 'ext install simide.simide-vscode';
+  const installCmd = 'ext install kingsahil.simide-ide';
 
   const handleCopy = () => {
     navigator.clipboard.writeText(installCmd);
@@ -104,11 +104,12 @@ export const DownloadCTA: React.FC = () => {
 
             {/* Buttons */}
             <div
+              className="hero-cta-group"
               style={{
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                gap: '16px',
+                gap: '20px',
                 flexWrap: 'wrap',
                 marginBottom: '36px',
               }}
@@ -117,22 +118,81 @@ export const DownloadCTA: React.FC = () => {
                 href={DOWNLOAD_URL}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="btn btn-primary"
-                style={{ padding: '14px 32px', fontSize: '1rem', textDecoration: 'none' }}
+                className="hero-cta-button primary"
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '14px',
+                  padding: '16px 36px',
+                  borderRadius: '100px',
+                  fontSize: '1.05rem',
+                  fontWeight: 700,
+                  color: '#FFFFFF',
+                  background: 'linear-gradient(135deg, #168BFF 0%, #0066FF 100%)',
+                  border: '1.5px solid rgba(255, 255, 255, 0.25)',
+                  boxShadow: '0 8px 32px rgba(22, 139, 255, 0.45), 0 2px 8px rgba(0, 0, 0, 0.5)',
+                  textDecoration: 'none',
+                  cursor: 'pointer',
+                  letterSpacing: '0.01em',
+                }}
               >
-                <VsCodeIcon size={22} />
+                <div
+                  style={{
+                    width: '32px',
+                    height: '32px',
+                    borderRadius: '8px',
+                    background: 'rgba(255, 255, 255, 0.18)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    flexShrink: 0,
+                  }}
+                >
+                  <VsCodeIcon size={20} colorMode="white" />
+                </div>
                 <span>Download Extension</span>
-                <ArrowRight size={18} />
+                <ArrowRight size={20} style={{ marginLeft: '2px', flexShrink: 0 }} />
               </a>
 
               <a
                 href={GITHUB_URL}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="btn btn-secondary"
-                style={{ padding: '14px 28px', fontSize: '1rem', textDecoration: 'none' }}
+                className="hero-cta-button secondary"
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '14px',
+                  padding: '16px 34px',
+                  borderRadius: '100px',
+                  fontSize: '1.05rem',
+                  fontWeight: 600,
+                  color: '#F4F7FB',
+                  background: 'rgba(13, 21, 33, 0.85)',
+                  border: '1.5px solid #26364A',
+                  backdropFilter: 'blur(16px)',
+                  boxShadow: '0 8px 28px rgba(0, 0, 0, 0.5)',
+                  textDecoration: 'none',
+                  cursor: 'pointer',
+                  letterSpacing: '0.01em',
+                }}
               >
-                <GithubIcon size={20} />
+                <div
+                  style={{
+                    width: '32px',
+                    height: '32px',
+                    borderRadius: '8px',
+                    background: 'rgba(255, 255, 255, 0.08)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    flexShrink: 0,
+                  }}
+                >
+                  <GithubIcon size={20} />
+                </div>
                 <span>View on GitHub</span>
               </a>
             </div>
